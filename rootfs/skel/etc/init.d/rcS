@@ -67,8 +67,11 @@ fi
 cmdline=`cat /proc/cmdline`
 
 if [[ "$cmdline" != *nfsroot=* ]]; then
-	# set up networking if we are not on an NFS rootfs
-	for x in `ls /sys/class/net`; do
+	# Make sure ethX appear(s) first, which is relevant for DSA enabled
+	# systems where ethX (conduit interface) needs to be brought up first
+	# before all other DSA created network interfaces
+	ifaces="$(ls /sys/class/net | grep eth) $(ls /sys/class/net | grep -v eth)"
+	for x in $ifaces; do
 		echo "Configuring $x interface"
 		/sbin/ifup $x
 	done

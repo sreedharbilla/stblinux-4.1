@@ -16,8 +16,8 @@ Required Properties:
       zero must be specified; the Brcmstb driver code uses this interrupt
       to determine the offset used for all interrupts, specifically, those
       listed in interrupt-map.
-  compatible -- must be one of: "brcm,bcm7425-pcie", "brcm,bcm7435-pcie" or
-      "brcm,pci-plat-dev".
+  compatible -- must be one of: "brcm,bcm7425-pcie", "brcm,bcm7435-pcie",
+      "brcm,bcm7278-pcie" or "brcm,pci-plat-dev".
   #address-cells -- the number of address cells for PCI-space.
   #size-cells -- the number of size cells for PCI-space.
   ranges -- See [1]; a specification of the outbound windows for the host

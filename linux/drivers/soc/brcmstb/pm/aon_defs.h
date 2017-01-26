@@ -57,8 +57,17 @@ enum {
 #define BRCMSTB_S3_MAGIC		0x5AFEB007
 #define BRCMSTB_PANIC_MAGIC		0x512E115E
 #define BOOTLOADER_SCRATCH_SIZE		64
+#define BRCMSTB_DTU_STATE_MAP_ENTRIES	(8*1024)
+#define BRCMSTB_DTU_CONFIG_ENTRIES	(512)
+#define BRCMSTB_DTU_COUNT		(2)
+
 #define IMAGE_DESCRIPTORS_BUFSIZE	(2 * 1024)
 #define S3_BOOTLOADER_RESERVED		(S3_FLAG_PSCI_BOOT | S3_FLAG_BOOTED64)
+
+struct brcmstb_bootloader_dtu_table {
+	uint32_t	dtu_state_map[BRCMSTB_DTU_STATE_MAP_ENTRIES];
+	uint32_t	dtu_config[BRCMSTB_DTU_CONFIG_ENTRIES];
+};
 
 /*
  * Bootloader utilizes a custom parameter block left in DRAM for handling S3
@@ -95,6 +104,10 @@ struct brcmstb_s3_params {
 	uint32_t spare[70];
 
 	uint8_t descriptors[IMAGE_DESCRIPTORS_BUFSIZE];
+	/*
+	 * Must be last member of struct. See brcmstb_pm_s3_finish() for reason.
+	 */
+	struct brcmstb_bootloader_dtu_table dtu[BRCMSTB_DTU_COUNT];
 } __packed;
 
 #endif /* __BRCMSTB_AON_DEFS_H__ */

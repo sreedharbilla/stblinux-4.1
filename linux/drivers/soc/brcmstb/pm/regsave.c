@@ -21,53 +21,147 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 
-
 struct brcmstb_reg_group {
 	void __iomem *regs;
 	unsigned int count;
 };
-static struct brcmstb_reg_group *reg_groups;
-static int num_reg_groups;
-static u32 *reg_mem;
+
+/*
+ * For now, one set of register offsets is sufficient for all SoCs that need
+ * this code. In the future, it might become necessary to have different
+ * offsets for different SoCs.
+ */
+unsigned int dtu_cfg_offs[] = {
+	0x38,
+	0x40,
+	0x48,
+	0x50,
+	0xc0,
+	0xc8,
+};
+
+static const unsigned int dtu_cfg_count = ARRAY_SIZE(dtu_cfg_offs);
+
+struct regsave_data {
+	struct brcmstb_reg_group *reg_groups;
+	u32 *dtu_map_mem;
+	u32 *dtu_config_mem;
+	u32 *reg_mem;
+	void __iomem *dtu_config;
+	void __iomem *dtu_map;
+	resource_size_t config_size;
+	resource_size_t map_size;
+	int num_reg_groups;
+};
+
+static struct regsave_data priv;
+
+static int dtu_save(void)
+{
+	int i;
+
+	for (i = 0; i < priv.map_size / sizeof(u32); i++)
+		priv.dtu_map_mem[i] =
+			__raw_readl(priv.dtu_map + i * sizeof(u32));
+
+	if (priv.dtu_config) {
+		for (i = 0; i < dtu_cfg_count; i++)
+			priv.dtu_config_mem[i] =
+				__raw_readl(priv.dtu_config +
+					    dtu_cfg_offs[i]);
+	}
+
+	return 0;
+}
+
+static struct syscore_ops dtusave_pm_ops = {
+	.suspend        = dtu_save,
+};
+
+int brcmstb_dtusave_init(u32 *map_buffer, u32 *config_buffer)
+{
+	struct device_node *dn;
+	struct resource res;
+	int ret = 0;
+
+	dn = of_find_compatible_node(NULL, NULL, "brcm,brcmstb-memc-dtu-map");
+	if (!dn)
+		return 0;
+
+	priv.dtu_map = of_iomap(dn, 0);
+	if (!priv.dtu_map) {
+		ret = -EIO;
+		goto out;
+	}
+	if (of_address_to_resource(dn, 0 , &res)) {
+		ret = -EIO;
+		goto out;
+	}
+	of_node_put(dn);
+
+	priv.map_size = resource_size(&res);
+	priv.dtu_map_mem = map_buffer;
+
+	dn = of_find_compatible_node(NULL, NULL,
+				     "brcm,brcmstb-memc-dtu-config");
+	if (dn) {
+		priv.dtu_config = of_iomap(dn, 0);
+		if (!priv.dtu_config) {
+			ret = -EIO;
+			goto out;
+		}
+		if (of_address_to_resource(dn, 0 , &res)) {
+			ret = -EIO;
+			goto out;
+		}
+		priv.config_size = resource_size(&res);
+		priv.dtu_config_mem = config_buffer;
+	}
+
+	register_syscore_ops(&dtusave_pm_ops);
+
+out:
+	if (likely(dn))
+		of_node_put(dn);
+
+	return ret;
+}
 
 static int reg_save(void)
 {
 	int i;
 	unsigned int j, total;
 
-	if (0 == num_reg_groups)
+	if (priv.num_reg_groups == 0)
 		return 0;
 
-	for (i = 0, total = 0; i < num_reg_groups; i++) {
-		struct brcmstb_reg_group *p = &reg_groups[i];
+	for (i = 0, total = 0; i < priv.num_reg_groups; i++) {
+		struct brcmstb_reg_group *p = &priv.reg_groups[i];
 		for (j = 0; j < p->count; j++)
-			reg_mem[total++] = __raw_readl(p->regs + (j * 4));
+			priv.reg_mem[total++] = __raw_readl(p->regs + (j * 4));
 	}
 	return 0;
 }
-
 
 static void reg_restore(void)
 {
 	int i;
 	unsigned int j, total;
 
-	if (0 == num_reg_groups)
+	if (priv.num_reg_groups == 0)
 		return;
 
-	for (i = 0, total = 0; i < num_reg_groups; i++) {
-		struct brcmstb_reg_group *p = &reg_groups[i];
+	for (i = 0, total = 0; i < priv.num_reg_groups; i++) {
+		struct brcmstb_reg_group *p = &priv.reg_groups[i];
 		for (j = 0; j < p->count; j++)
-			__raw_writel(reg_mem[total++], p->regs + (j * 4));
+			__raw_writel(priv.reg_mem[total++], p->regs + (j * 4));
 	}
 }
-
 
 static struct syscore_ops regsave_pm_ops = {
 	.suspend        = reg_save,
 	.resume         = reg_restore,
 };
-
 
 int brcmstb_regsave_init(void)
 {
@@ -93,9 +187,10 @@ int brcmstb_regsave_init(void)
 		goto fail;
 
 	num_phandles = len / 4;
-	reg_groups = kzalloc(num_phandles * sizeof(struct brcmstb_reg_group),
-			    GFP_KERNEL);
-	if (reg_groups == NULL) {
+	priv.reg_groups =
+		kzalloc(num_phandles * sizeof(struct brcmstb_reg_group),
+			GFP_KERNEL);
+	if (priv.reg_groups == NULL) {
 		ret = -ENOMEM;
 		goto fail;
 	}
@@ -118,15 +213,16 @@ int brcmstb_regsave_init(void)
 			goto fail;
 		}
 
-		reg_groups[num_reg_groups].regs = regs;
-		reg_groups[num_reg_groups].count = (unsigned) (size >> 2);
-		num_reg_groups++;
+		priv.reg_groups[priv.num_reg_groups].regs = regs;
+		priv.reg_groups[priv.num_reg_groups].count =
+			(size / sizeof(u32));
+		priv.num_reg_groups++;
 	};
 
-	for (i = 0, total = 0; i < num_reg_groups; i++)
-		total += reg_groups[i].count;
-	reg_mem = kmalloc(total * sizeof(u32), GFP_KERNEL);
-	if (!reg_mem) {
+	for (i = 0, total = 0; i < priv.num_reg_groups; i++)
+		total += priv.reg_groups[i].count;
+	priv.reg_mem = kmalloc(total * sizeof(u32), GFP_KERNEL);
+	if (!priv.reg_mem) {
 		ret = -ENOMEM;
 		goto fail;
 	}
@@ -134,15 +230,15 @@ int brcmstb_regsave_init(void)
 	register_syscore_ops(&regsave_pm_ops);
 	return 0;
 fail:
-	if (reg_groups) {
+	if (priv.reg_groups) {
 		for (i = 0; i < num_phandles; i++)
-			if (reg_groups[i].regs)
-				iounmap(reg_groups[i].regs);
+			if (priv.reg_groups[i].regs)
+				iounmap(priv.reg_groups[i].regs);
 			else
 				break;
-		kfree(reg_groups);
+		kfree(priv.reg_groups);
 	}
-	kfree(reg_mem);
+	kfree(priv.reg_mem);
 	of_node_put(dn);
 	return ret;
 }

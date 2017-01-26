@@ -25,6 +25,7 @@ if [ "$CONFIG_USER_MOCA_MOCA1" = "y" -o "$CONFIG_USER_MOCA_MOCA2" = "y" ]; then
 	bool 'Install Gen1 firmware'	CONFIG_USER_MOCA_GEN1
 	bool 'Install Gen2 firmware'	CONFIG_USER_MOCA_GEN2
 	bool 'Install Gen3 firmware'	CONFIG_USER_MOCA_GEN3
+	bool 'Install Gen4 firmware'	CONFIG_USER_MOCA_GEN4
 fi
 
 endmenu

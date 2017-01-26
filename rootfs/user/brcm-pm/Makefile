@@ -9,17 +9,21 @@ include $(ROOTDIR)/config.arch
 #     Apparently, those don't get defined when -std=c99 is being used.
 CFLAGS += -I. -L. -W -Wall -Wpedantic -Werror -std=gnu99
 
+ifeq ($(ARCH),mips)
+SUFFIX:=-legacy
+endif
+
 .PHONY: all
 all: libbrcm-pm.a pmtest
 
-libbrcm-pm.a: pmlib.o
+libbrcm-pm.a: pmlib$(SUFFIX).o
 	$(AR) r $@ $<
 	$(RANLIB) $@
 
-pmlib.o: pmlib.c pmlib.h
+pmlib.o: pmlib$(SUFFIX).c pmlib$(SUFFIX).h
 	$(CC) $(CFLAGS) -c $< -o $@
 
-pmtest: pmtest.c libbrcm-pm.a
+pmtest: pmtest$(SUFFIX).c libbrcm-pm.a
 	$(CC) $(CFLAGS) $< -o $@ -lbrcm-pm
 
 .PHONY: clean distclean romfs

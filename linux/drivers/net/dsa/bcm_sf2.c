@@ -22,6 +22,7 @@
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
+#include <linux/of_net.h>
 #include <net/dsa.h>
 #include <linux/ethtool.h>
 #include <linux/if_bridge.h>
@@ -205,29 +206,9 @@ static void bcm_sf2_imp_vlan_setup(struct dsa_switch *ds, int cpu_port)
 	}
 }
 
-static void bcm_sf2_imp_setup(struct dsa_switch *ds, int port)
+static void bcm_sf2_brcm_hdr_setup(struct bcm_sf2_priv *priv, int port)
 {
-	struct bcm_sf2_priv *priv = ds_to_priv(ds);
 	u32 reg, val;
-
-	/* Enable the port memories */
-	reg = core_readl(priv, CORE_MEM_PSM_VDD_CTRL);
-	reg &= ~P_TXQ_PSM_VDD(port);
-	core_writel(priv, reg, CORE_MEM_PSM_VDD_CTRL);
-
-	/* Enable Broadcast, Multicast, Unicast forwarding to IMP port */
-	reg = core_readl(priv, CORE_IMP_CTL);
-	reg |= (RX_BCST_EN | RX_MCST_EN | RX_UCST_EN);
-	reg &= ~(RX_DIS | TX_DIS);
-	core_writel(priv, reg, CORE_IMP_CTL);
-
-	/* Enable forwarding */
-	core_writel(priv, SW_FWDG_EN, CORE_SWMODE);
-
-	/* Enable IMP port in dumb mode */
-	reg = core_readl(priv, CORE_SWITCH_CTRL);
-	reg |= MII_DUMB_FWDG_EN;
-	core_writel(priv, reg, CORE_SWITCH_CTRL);
 
 	/* Resolve which bit controls the Broadcom tag */
 	switch (port) {
@@ -263,11 +244,43 @@ static void bcm_sf2_imp_setup(struct dsa_switch *ds, int port)
 	reg = core_readl(priv, CORE_BRCM_HDR_TX_DIS);
 	reg &= ~(1 << port);
 	core_writel(priv, reg, CORE_BRCM_HDR_TX_DIS);
+}
+
+static void bcm_sf2_imp_setup(struct dsa_switch *ds, int port)
+{
+	struct bcm_sf2_priv *priv = ds_to_priv(ds);
+	u32 reg, offset;
+
+	if (priv->type == BCM7445)
+		offset = CORE_STS_OVERRIDE_IMP;
+	else
+		offset = CORE_STS_OVERRIDE_IMP2;
+
+	/* Enable the port memories */
+	reg = core_readl(priv, CORE_MEM_PSM_VDD_CTRL);
+	reg &= ~P_TXQ_PSM_VDD(port);
+	core_writel(priv, reg, CORE_MEM_PSM_VDD_CTRL);
+
+	/* Enable Broadcast, Multicast, Unicast forwarding to IMP port */
+	reg = core_readl(priv, CORE_IMP_CTL);
+	reg |= (RX_BCST_EN | RX_MCST_EN | RX_UCST_EN);
+	reg &= ~(RX_DIS | TX_DIS);
+	core_writel(priv, reg, CORE_IMP_CTL);
+
+	/* Enable forwarding */
+	core_writel(priv, SW_FWDG_EN, CORE_SWMODE);
+
+	/* Enable IMP port in dumb mode */
+	reg = core_readl(priv, CORE_SWITCH_CTRL);
+	reg |= MII_DUMB_FWDG_EN;
+	core_writel(priv, reg, CORE_SWITCH_CTRL);
+
+	bcm_sf2_brcm_hdr_setup(priv, port);
 
 	/* Force link status for IMP port */
-	reg = core_readl(priv, CORE_STS_OVERRIDE_IMP);
+	reg = core_readl(priv, offset);
 	reg |= (MII_SW_OR | LINK_STS);
-	core_writel(priv, reg, CORE_STS_OVERRIDE_IMP);
+	core_writel(priv, reg, offset);
 
 	priv->port_sts[port].enabled = true;
 }
@@ -314,6 +327,50 @@ static void bcm_sf2_gphy_enable_set(struct dsa_switch *ds, bool enable)
 	}
 }
 
+static inline void bcm_sf2_port_intr_enable(struct bcm_sf2_priv *priv,
+					    int port)
+{
+	unsigned int off;
+
+	switch (port) {
+	case 7:
+		off = P7_IRQ_OFF;
+		break;
+	case 0:
+		/* Port 0 interrupts are located on the first bank */
+		intrl2_0_mask_clear(priv, P_IRQ_MASK(P0_IRQ_OFF));
+		return;
+	default:
+		off = P_IRQ_OFF(port);
+		break;
+	}
+
+	intrl2_1_mask_clear(priv, P_IRQ_MASK(off));
+}
+
+static inline void bcm_sf2_port_intr_disable(struct bcm_sf2_priv *priv,
+					     int port)
+{
+	unsigned int off;
+
+	switch (port) {
+	case 7:
+		off = P7_IRQ_OFF;
+		break;
+	case 0:
+		/* Port 0 interrupts are located on the first bank */
+		intrl2_0_mask_set(priv, P_IRQ_MASK(P0_IRQ_OFF));
+		intrl2_0_writel(priv, P_IRQ_MASK(P0_IRQ_OFF), INTRL2_CPU_CLEAR);
+		return;
+	default:
+		off = P_IRQ_OFF(port);
+		break;
+	}
+
+	intrl2_1_mask_set(priv, P_IRQ_MASK(off));
+	intrl2_1_writel(priv, P_IRQ_MASK(off), INTRL2_CPU_CLEAR);
+}
+
 static int bcm_sf2_port_setup(struct dsa_switch *ds, int port,
 			      struct phy_device *phy)
 {
@@ -330,11 +387,15 @@ static int bcm_sf2_port_setup(struct dsa_switch *ds, int port,
 	reg &= ~P_TXQ_PSM_VDD(port);
 	core_writel(priv, reg, CORE_MEM_PSM_VDD_CTRL);
 
+	/* Enable Broadcom tags for that port if requested */
+	if (priv->brcm_tag_mask & BIT(port))
+		bcm_sf2_brcm_hdr_setup(priv, port);
+
 	/* Clear the Rx and Tx disable bits and set to no spanning tree */
 	core_writel(priv, 0, CORE_G_PCTL_PORT(port));
 
 	/* Re-enable the GPHY and re-apply workarounds */
-	if (port == 0 && priv->hw_params.num_gphy == 1) {
+	if (priv->int_phy_mask & 1 << port && priv->hw_params.num_gphy == 1) {
 		bcm_sf2_gphy_enable_set(ds, true);
 		if (phy) {
 			/* if phy_stop() has been called before, phy
@@ -351,9 +412,9 @@ static int bcm_sf2_port_setup(struct dsa_switch *ds, int port,
 		}
 	}
 
-	/* Enable port 7 interrupts to get notified */
-	if (port == 7)
-		intrl2_1_mask_clear(priv, P_IRQ_MASK(P7_IRQ_OFF));
+	/* Enable MoCA port interrupts to get notified */
+	if (port == priv->moca_port)
+		bcm_sf2_port_intr_enable(priv, port);
 
 	/* Set this port, and only this one to be in the default VLAN,
 	 * if member of a bridge, restore its membership prior to
@@ -392,12 +453,10 @@ static void bcm_sf2_port_disable(struct dsa_switch *ds, int port,
 	if (priv->wol_ports_mask & (1 << port))
 		return;
 
-	if (port == 7) {
-		intrl2_1_mask_set(priv, P_IRQ_MASK(P7_IRQ_OFF));
-		intrl2_1_writel(priv, P_IRQ_MASK(P7_IRQ_OFF), INTRL2_CPU_CLEAR);
-	}
+	if (port == priv->moca_port)
+		bcm_sf2_port_intr_disable(priv, port);
 
-	if (port == 0 && priv->hw_params.num_gphy == 1)
+	if (priv->int_phy_mask & 1 << port && priv->hw_params.num_gphy == 1)
 		bcm_sf2_gphy_enable_set(ds, false);
 
 	if (dsa_is_cpu_port(ds, port))
@@ -913,10 +972,112 @@ static void bcm_sf2_intr_disable(struct bcm_sf2_priv *priv)
 	intrl2_1_writel(priv, 0xffffffff, INTRL2_CPU_CLEAR);
 }
 
+struct bcm_sf2_of_data {
+	enum bcm_sf2_type type;
+	const u16 *reg_offsets;
+	unsigned int core_reg_align;
+};
+
+/* Register offsets for the SWITCH_REG_* block */
+static const u16 bcm_sf2_7445_reg_offsets[] = {
+	[REG_SWITCH_CNTRL]	= 0x00,
+	[REG_SWITCH_STATUS]	= 0x04,
+	[REG_DIR_DATA_WRITE]	= 0x08,
+	[REG_DIR_DATA_READ]	= 0x0C,
+	[REG_SWITCH_REVISION]	= 0x18,
+	[REG_PHY_REVISION]	= 0x1C,
+	[REG_SPHY_CNTRL]	= 0x2C,
+	[REG_RGMII_0_CNTRL]	= 0x34,
+	[REG_RGMII_1_CNTRL]	= 0x40,
+	[REG_RGMII_2_CNTRL]	= 0x4c,
+	[REG_LED_0_CNTRL]	= 0x90,
+	[REG_LED_1_CNTRL]	= 0x94,
+	[REG_LED_2_CNTRL]	= 0x98,
+};
+
+static const struct bcm_sf2_of_data bcm_sf2_7445_data = {
+	.type		= BCM7445,
+	.core_reg_align	= 0,
+	.reg_offsets	= bcm_sf2_7445_reg_offsets,
+};
+
+static const u16 bcm_sf2_7278_reg_offsets[] = {
+	[REG_SWITCH_CNTRL]	= 0x00,
+	[REG_SWITCH_STATUS]	= 0x04,
+	[REG_DIR_DATA_WRITE]	= 0x08,
+	[REG_DIR_DATA_READ]	= 0x0c,
+	[REG_SWITCH_REVISION]	= 0x10,
+	[REG_PHY_REVISION]	= 0x14,
+	[REG_SPHY_CNTRL]	= 0x24,
+	[REG_RGMII_0_CNTRL]	= 0xe0,
+	[REG_RGMII_1_CNTRL]	= 0xec,
+	[REG_RGMII_2_CNTRL]	= 0xf8,
+	[REG_LED_0_CNTRL]	= 0x40,
+	[REG_LED_1_CNTRL]	= 0x4c,
+	[REG_LED_2_CNTRL]	= 0x58,
+};
+
+static const struct bcm_sf2_of_data bcm_sf2_7278_data = {
+	.type		= BCM7278,
+	.core_reg_align	= 1,
+	.reg_offsets	= bcm_sf2_7278_reg_offsets,
+};
+
+static const struct of_device_id bcm_sf2_of_match[] = {
+	{ .compatible = "brcm,bcm7445-switch-v4.0",
+	  .data = &bcm_sf2_7445_data
+	},
+	{ .compatible = "brcm,bcm7278-switch-v4.0",
+	  .data = &bcm_sf2_7278_data
+	},
+	{ /* sentinel */ },
+};
+
+static void bcm_sf2_identify_ports(struct bcm_sf2_priv *priv,
+				   struct device_node *dn)
+{
+	struct device_node *port;
+	const char *phy_mode_str;
+	int mode;
+	unsigned int port_num;
+	int ret;
+
+	priv->moca_port = -1;
+
+	for_each_available_child_of_node(dn, port) {
+		if (of_property_read_u32(port, "reg", &port_num))
+			continue;
+
+		/* Internal PHYs get assigned a specific 'phy-mode' property
+		 * value: "internal" to help flag them before MDIO probing
+		 * has completed, since they might be turned off at that
+		 * time
+		 */
+		mode = of_get_phy_mode(port);
+		if (mode < 0) {
+			ret = of_property_read_string(port, "phy-mode",
+						      &phy_mode_str);
+			if (ret < 0)
+				continue;
+
+			if (!strcasecmp(phy_mode_str, "internal"))
+				priv->int_phy_mask |= 1 << port_num;
+		}
+
+		if (mode == PHY_INTERFACE_MODE_MOCA)
+			priv->moca_port = port_num;
+
+		if (of_property_read_bool(port, "brcm,use-bcm-hdr"))
+			priv->brcm_tag_mask |= 1 << port_num;
+	}
+}
+
 static int bcm_sf2_sw_setup(struct dsa_switch *ds)
 {
 	const char *reg_names[BCM_SF2_REGS_NUM] = BCM_SF2_REGS_NAME;
 	struct bcm_sf2_priv *priv = ds_to_priv(ds);
+	const struct of_device_id *of_id = NULL;
+	const struct bcm_sf2_of_data *data;
 	struct device_node *dn;
 	void __iomem **base;
 	unsigned int port;
@@ -926,14 +1087,32 @@ static int bcm_sf2_sw_setup(struct dsa_switch *ds)
 
 	spin_lock_init(&priv->indir_lock);
 	mutex_init(&priv->stats_mutex);
+	mutex_init(&priv->cfp.lock);
+
+	/* CFP rule #0 cannot be used for specific classifications, flag it as
+	 * permanently used
+	 */
+	set_bit(0, priv->cfp.used);
 
 	/* All the interesting properties are at the parent device_node
 	 * level
 	 */
 	dn = ds->pd->of_node->parent;
+	bcm_sf2_identify_ports(priv, ds->pd->of_node);
 
 	priv->irq0 = irq_of_parse_and_map(dn, 0);
 	priv->irq1 = irq_of_parse_and_map(dn, 1);
+
+	of_id = of_match_node(bcm_sf2_of_match, dn);
+	if (!of_id || !of_id->data)
+		return -EINVAL;
+
+	data = of_id->data;
+
+	/* Set SWITCH_REG register offsets and SWITCH_CORE align factor */
+	priv->type = data->type;
+	priv->reg_offsets = data->reg_offsets;
+	priv->core_reg_align = data->core_reg_align;
 
 	base = &priv->core;
 	for (i = 0; i < BCM_SF2_REGS_NUM; i++) {
@@ -963,6 +1142,12 @@ static int bcm_sf2_sw_setup(struct dsa_switch *ds)
 	ret = bcm_sf2_sw_rst(priv);
 	if (ret) {
 		pr_err("unable to software reset switch: %d\n", ret);
+		goto out_clk;
+	}
+
+	ret = bcm_sf2_cfp_rst(priv);
+	if (ret) {
+		pr_err("unable to software reset TCAM: %d\n", ret);
 		goto out_clk;
 	}
 
@@ -1147,7 +1332,12 @@ static void bcm_sf2_sw_adjust_link(struct dsa_switch *ds, int port,
 	struct bcm_sf2_priv *priv = ds_to_priv(ds);
 	u32 id_mode_dis = 0, port_mode;
 	const char *str = NULL;
-	u32 reg;
+	u32 reg, offset;
+
+	if (priv->type == BCM7445)
+		offset = CORE_STS_OVERRIDE_GMIIP_PORT(port);
+	else
+		offset = CORE_STS_OVERRIDE_GMIIP2_PORT(port);
 
 	switch (phydev->interface) {
 	case PHY_INTERFACE_MODE_RGMII:
@@ -1218,22 +1408,27 @@ force_link:
 	if (phydev->duplex == DUPLEX_FULL)
 		reg |= DUPLX_MODE;
 
-	core_writel(priv, reg, CORE_STS_OVERRIDE_GMIIP_PORT(port));
+	core_writel(priv, reg, offset);
 }
 
 static void bcm_sf2_sw_fixed_link_update(struct dsa_switch *ds, int port,
 					 struct fixed_phy_status *status)
 {
 	struct bcm_sf2_priv *priv = ds_to_priv(ds);
-	u32 duplex, pause;
+	u32 duplex, pause, offset;
 	u32 reg;
+
+	if (priv->type == BCM7445)
+		offset = CORE_STS_OVERRIDE_GMIIP_PORT(port);
+	else
+		offset = CORE_STS_OVERRIDE_GMIIP2_PORT(port);
 
 	duplex = core_readl(priv, CORE_DUPSTS);
 	pause = core_readl(priv, CORE_PAUSESTS);
 
 	status->link = 0;
 
-	/* Port 7 is special as we do not get link status from CORE_LNKSTS,
+	/* MoCA port is special as we do not get link status from CORE_LNKSTS,
 	 * which means that we need to force the link at the port override
 	 * level to get the data to flow. We do use what the interrupt handler
 	 * did determine before.
@@ -1241,7 +1436,7 @@ static void bcm_sf2_sw_fixed_link_update(struct dsa_switch *ds, int port,
 	 * For the other ports, we just force the link status, since this is
 	 * a fixed PHY device.
 	 */
-	if (port == 7) {
+	if (port == priv->moca_port) {
 		status->link = priv->port_sts[port].link;
 		if (!status->link)
 			netif_carrier_off(ds->ports[port]);
@@ -1251,13 +1446,13 @@ static void bcm_sf2_sw_fixed_link_update(struct dsa_switch *ds, int port,
 		status->duplex = !!(duplex & (1 << port));
 	}
 
-	reg = core_readl(priv, CORE_STS_OVERRIDE_GMIIP_PORT(port));
+	reg = core_readl(priv, offset);
 	reg |= SW_OVERRIDE;
 	if (status->link)
 		reg |= LINK_STS;
 	else
 		reg &= ~LINK_STS;
-	core_writel(priv, reg, CORE_STS_OVERRIDE_GMIIP_PORT(port));
+	core_writel(priv, reg, offset);
 
 	if ((pause & (1 << port)) &&
 	    (pause & (1 << (port + PAUSESTS_TX_PAUSE_SHIFT)))) {
@@ -1413,6 +1608,8 @@ static struct dsa_switch_driver bcm_sf2_switch_driver = {
 	.fdb_add		= bcm_sf2_sw_fdb_add,
 	.fdb_del		= bcm_sf2_sw_fdb_del,
 	.fdb_dump		= bcm_sf2_sw_fdb_dump,
+	.get_rxnfc		= bcm_sf2_get_rxnfc,
+	.set_rxnfc		= bcm_sf2_set_rxnfc,
 };
 
 static int __init bcm_sf2_init(void)

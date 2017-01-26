@@ -31,6 +31,7 @@ CONFIG_CONFIG	:= $(ROOTDIR)/config/.config
 ARCH_CONFIG	:= $(ROOTDIR)/config.arch
 ROMFSDIR	:= $(ROOTDIR)/romfs
 ROMFSINST	:= $(ROOTDIR)/bin/romfs-inst.sh
+TEMP_MOD_DIR	:= $(ROOTDIR)/kobj_tmp
 
 CFG		:= perl -w bin/config.pl
 CHKPATH		:= perl -w bin/checkpath.pl
@@ -101,6 +102,8 @@ rootfs: .target chkpath
 	if [ -z "$(SUBDIRS)" ]; then \
 		rm -rf $(ROMFSDIR) ; \
 		cp -a skel romfs || exit 1 ; \
+		test -d $(TEMP_MOD_DIR) && cp -a $(TEMP_MOD_DIR)/* romfs ; \
+		rm -rf $(TEMP_MOD_DIR); \
 		chmod -R a+x romfs/{bin,sbin} ; \
 		mkdir -p romfs/{bin,sbin,etc,dev,proc,sys,lib,root,tmp} ; \
 		if [ "$(ARCH)" = "arm64" ]; then \
@@ -143,6 +146,13 @@ rootfs: .target chkpath
 		$(MAKE) -j1 -C user romfs \
 			INITRD_SUBDIR="$(SUBDIRS)" || exit 1 ; \
 	fi
+
+
+modules:
+	$(MAKE) -C $(LINUXDIR) SUBDIRS= ARCH="$(ARCH)" modules
+	# Install modules in a temporary location. They will be copied to the
+	# final location under /lib/modules/... at the rootfs build stage.
+	$(MAKE) -C $(LINUXDIR) SUBDIRS= ARCH="$(ARCH)" INSTALL_MOD_PATH=$(TEMP_MOD_DIR) modules_install
 
 .PHONY: initrd_kernel
 initrd_kernel: .target chkpath rootfs
@@ -214,11 +224,13 @@ kernel_sign: .target chkpath
 .PHONY: vmlinuz-initrd-%
 vmlinuz-initrd-%:
 	$(MAKE) $(MAKEOPTS) defaults-$*
+	$(MAKE) $(MAKEOPTS) modules
 	$(MAKE) $(MAKEOPTS) initrd_kernel
 
 .PHONY: vmlinuz-%
 vmlinuz-%:
 	$(MAKE) $(MAKEOPTS) defaults-$*
+	$(MAKE) $(MAKEOPTS) modules
 	$(MAKE) $(MAKEOPTS) kernel
 
 .PHONY: kernels-%

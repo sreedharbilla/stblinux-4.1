@@ -368,6 +368,36 @@ static const struct moca_regs regs_20 = {
 	.sideband_gmii_fc_offset	= 0x001fec18
 };
 
+static const struct moca_regs regs_20_gen4 = {
+	.data_mem_offset		= 0,
+	.data_mem_size			= (768 * 1024),
+	.cntl_mem_offset		= 0x00100000,
+	.cntl_mem_size			= (416 * 1024),
+	.gp0_offset			= 0,
+	.gp1_offset			= 0,
+	.ringbell_offset		= 0x001ffd0c,
+	.l2_status_offset		= 0x001ffc40,
+	.l2_clear_offset		= 0x001ffc48,
+	.l2_mask_set_offset		= 0x001ffc50,
+	.l2_mask_clear_offset		= 0x001ffc54,
+	.sw_reset_offset		= 0x001ffd00,
+	.led_ctrl_offset		= 0,
+	.m2m_src_offset			= 0x001ffc00,
+	.m2m_dst_offset			= 0x001ffc04,
+	.m2m_cmd_offset			= 0x001ffc08,
+	.m2m_status_offset		= 0x001ffc0c,
+	.m2m_src_high_offset		= 0x001ffc10,
+	.m2m_dst_high_offset		= 0x001ffc14,
+	.moca2host_mmp_inbox_0_offset	= 0x001ffd58,
+	.moca2host_mmp_inbox_1_offset	= 0x001ffd5c,
+	.moca2host_mmp_inbox_2_offset	= 0x001ffd60,
+	.h2m_resp_bit[1]		= 0x10,
+	.h2m_req_bit[1]			= 0x20,
+	.h2m_resp_bit[0]		= 0x1,
+	.h2m_req_bit[0]			= 0x2,
+	.sideband_gmii_fc_offset	= 0x001fec18
+};
+
 #define MOCA_FW_MAGIC		0x4d6f4341
 
 struct moca_fw_hdr {
@@ -2684,6 +2714,8 @@ static int moca_probe(struct platform_device *pdev)
 		(pd->hw_rev == HWREV_MOCA_20_GEN22) ||
 		(pd->hw_rev == HWREV_MOCA_20_GEN23))
 		priv->regs = &regs_20;
+	else if (pd->hw_rev == HWREV_MOCA_20_GEN24)
+		priv->regs = &regs_20_gen4;
 	else {
 		dev_err(&pdev->dev, "unsupported MoCA HWREV: %x\n",
 			pd->hw_rev);

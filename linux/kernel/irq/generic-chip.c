@@ -135,17 +135,121 @@ void irq_gc_ack_clr_bit(struct irq_data *d)
 }
 
 /**
- * irq_gc_mask_disable_reg_and_ack - Mask and ack pending interrupt
+ * irq_gc_mask_disable_and_ack_set - Mask and ack pending interrupt
  * @d: irq_data
+ *
+ * Chip has separate enable/disable registers instead of a single mask
+ * register and pending interrupt is acknowledged by setting a bit.
  */
-void irq_gc_mask_disable_reg_and_ack(struct irq_data *d)
+void irq_gc_mask_disable_and_ack_set(struct irq_data *d)
 {
 	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
 	struct irq_chip_type *ct = irq_data_get_chip_type(d);
 	u32 mask = d->mask;
 
 	irq_gc_lock(gc);
-	irq_reg_writel(gc, mask, ct->regs.mask);
+	irq_reg_writel(gc, mask, ct->regs.disable);
+	*ct->mask_cache &= ~mask;
+	irq_reg_writel(gc, mask, ct->regs.ack);
+	irq_gc_unlock(gc);
+}
+
+/**
+ * irq_gc_mask_disable_and_ack_clr - Mask and ack pending interrupt
+ * @d: irq_data
+ *
+ * Chip has separate enable/disable registers instead of a single mask
+ * register and pending interrupt is acknowledged by clearing a bit.
+ */
+void irq_gc_mask_disable_and_ack_clr(struct irq_data *d)
+{
+	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
+	struct irq_chip_type *ct = irq_data_get_chip_type(d);
+	u32 mask = d->mask;
+
+	irq_gc_lock(gc);
+	irq_reg_writel(gc, mask, ct->regs.disable);
+	*ct->mask_cache &= ~mask;
+	irq_reg_writel(gc, ~mask, ct->regs.ack);
+	irq_gc_unlock(gc);
+}
+
+/**
+ * irq_gc_mask_set_and_ack_set - Mask and ack pending interrupt
+ * @d: irq_data
+ *
+ * Chip has a single mask register where setting bits masks the interrupt
+ * and the pending interrupt is acknowledged by setting a bit.
+ */
+void irq_gc_mask_set_and_ack_set(struct irq_data *d)
+{
+	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
+	struct irq_chip_type *ct = irq_data_get_chip_type(d);
+	u32 mask = d->mask;
+
+	irq_gc_lock(gc);
+	*ct->mask_cache |= mask;
+	irq_reg_writel(gc, *ct->mask_cache, ct->regs.mask);
+	irq_reg_writel(gc, mask, ct->regs.ack);
+	irq_gc_unlock(gc);
+}
+
+/**
+ * irq_gc_mask_set_and_ack_clr - Mask and ack pending interrupt
+ * @d: irq_data
+ *
+ * Chip has a single mask register where setting bits masks the interrupt
+ * and the pending interrupt is acknowledged by clearing a bit.
+ */
+void irq_gc_mask_set_and_ack_clr(struct irq_data *d)
+{
+	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
+	struct irq_chip_type *ct = irq_data_get_chip_type(d);
+	u32 mask = d->mask;
+
+	irq_gc_lock(gc);
+	*ct->mask_cache |= mask;
+	irq_reg_writel(gc, *ct->mask_cache, ct->regs.mask);
+	irq_reg_writel(gc, ~mask, ct->regs.ack);
+	irq_gc_unlock(gc);
+}
+
+/**
+ * irq_gc_mask_clr_and_ack_set - Mask and ack pending interrupt
+ * @d: irq_data
+ *
+ * Chip has a single mask register where clearing bits masks the interrupt
+ * and the pending interrupt is acknowledged by setting a bit.
+ */
+void irq_gc_mask_clr_and_ack_set(struct irq_data *d)
+{
+	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
+	struct irq_chip_type *ct = irq_data_get_chip_type(d);
+	u32 mask = d->mask;
+
+	irq_gc_lock(gc);
+	*ct->mask_cache &= ~mask;
+	irq_reg_writel(gc, *ct->mask_cache, ct->regs.mask);
+	irq_reg_writel(gc, mask, ct->regs.ack);
+	irq_gc_unlock(gc);
+}
+
+/**
+ * irq_gc_mask_clr_and_ack_clr - Mask and ack pending interrupt
+ * @d: irq_data
+ *
+ * Chip has a single mask register where clearing bits masks the interrupt
+ * and the pending interrupt is acknowledged by clearing a bit.
+ */
+void irq_gc_mask_clr_and_ack_clr(struct irq_data *d)
+{
+	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
+	struct irq_chip_type *ct = irq_data_get_chip_type(d);
+	u32 mask = ~d->mask;
+
+	irq_gc_lock(gc);
+	*ct->mask_cache &= mask;
+	irq_reg_writel(gc, *ct->mask_cache, ct->regs.mask);
 	irq_reg_writel(gc, mask, ct->regs.ack);
 	irq_gc_unlock(gc);
 }

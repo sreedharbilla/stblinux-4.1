@@ -922,8 +922,12 @@ static noinline int brcmstb_pm_s3_finish(void)
 		return ret;
 	}
 
-	/* Clear parameter structure */
-	memset(params, 0, sizeof(*params));
+	/*
+	 * Clear parameter structure, but not DTU area, which has already been
+	 * filled in. We know DTU is a the end, so we can just subtract its
+	 * size.
+	 */
+	memset(params, 0, sizeof(*params) - sizeof(params->dtu));
 
 	flags = __raw_readl(ctrl.aon_sram + AON_REG_MAGIC_FLAGS);
 
@@ -1352,6 +1356,16 @@ static int brcmstb_pm_probe(struct platform_device *pdev)
 	}
 
 	ret = brcmstb_regsave_init();
+	if (ret)
+		goto out2;
+
+	/*
+	 * This code assumes only that one DTU config area needs to be saved.
+	 * Should this ever change, we'll have to do something more elaborate
+	 * here.
+	 */
+	ret = brcmstb_dtusave_init(ctrl.s3_params->dtu[0].dtu_state_map,
+				   ctrl.s3_params->dtu[0].dtu_config);
 	if (ret)
 		goto out2;
 

@@ -1,9 +1,6 @@
 #ifndef __ASM_ARM_CPUTYPE_H
 #define __ASM_ARM_CPUTYPE_H
 
-#include <linux/stringify.h>
-#include <linux/kernel.h>
-
 #define CPUID_ID	0
 #define CPUID_CACHETYPE	1
 #define CPUID_TCM	2
@@ -111,6 +108,11 @@
 #define BCM_CPU_PART_BRAHMA_B53	0x100
 
 #define MIDR_BRAHMA_B53 MIDR_CPU_PART(ARM_CPU_IMP_BCM, BCM_CPU_PART_BRAHMA_B53)
+
+#ifndef __ASSEMBLY__
+
+#include <linux/stringify.h>
+#include <linux/kernel.h>
 
 extern unsigned int processor_id;
 
@@ -299,5 +301,7 @@ static inline int __attribute_const__ cpuid_feature_extract_field(u32 features,
 
 #define cpuid_feature_extract(reg, field) \
 	cpuid_feature_extract_field(read_cpuid_ext(reg), field)
+
+#endif /* __ASSEMBLY__ */
 
 #endif

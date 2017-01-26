@@ -42,17 +42,13 @@
 #define  ARB_ERR_CAP_CLEAR		(1 << 0)
 #define  ARB_ERR_CAP_STATUS_TIMEOUT	(1 << 12)
 #define  ARB_ERR_CAP_STATUS_TEA		(1 << 11)
-#define  ARB_ERR_CAP_STATUS_BS_SHIFT	(1 << 2)
-#define  ARB_ERR_CAP_STATUS_BS_MASK	0x3c
 #define  ARB_ERR_CAP_STATUS_WRITE	(1 << 1)
 #define  ARB_ERR_CAP_STATUS_VALID	(1 << 0)
 
 enum {
 	ARB_TIMER,
 	ARB_ERR_CAP_CLR,
-	ARB_ERR_CAP_HI_ADDR,
 	ARB_ERR_CAP_ADDR,
-	ARB_ERR_CAP_DATA,
 	ARB_ERR_CAP_STATUS,
 	ARB_ERR_CAP_MASTER,
 };
@@ -60,19 +56,23 @@ enum {
 static const int gisb_offsets_bcm7038[] = {
 	[ARB_TIMER]		= 0x00c,
 	[ARB_ERR_CAP_CLR]	= 0x0c4,
-	[ARB_ERR_CAP_HI_ADDR]	= -1,
 	[ARB_ERR_CAP_ADDR]	= 0x0c8,
-	[ARB_ERR_CAP_DATA]	= 0x0cc,
 	[ARB_ERR_CAP_STATUS]	= 0x0d0,
 	[ARB_ERR_CAP_MASTER]	= -1,
+};
+
+static const int gisb_offsets_bcm7278[] = {
+	[ARB_TIMER]		= 0x008,
+	[ARB_ERR_CAP_CLR]	= 0x7f8,
+	[ARB_ERR_CAP_ADDR]	= 0x7e0,
+	[ARB_ERR_CAP_STATUS]	= 0x7f0,
+	[ARB_ERR_CAP_MASTER]	= 0x7f4,
 };
 
 static const int gisb_offsets_bcm7400[] = {
 	[ARB_TIMER]		= 0x00c,
 	[ARB_ERR_CAP_CLR]	= 0x0c8,
-	[ARB_ERR_CAP_HI_ADDR]	= -1,
 	[ARB_ERR_CAP_ADDR]	= 0x0cc,
-	[ARB_ERR_CAP_DATA]	= 0x0d0,
 	[ARB_ERR_CAP_STATUS]	= 0x0d4,
 	[ARB_ERR_CAP_MASTER]	= 0x0d8,
 };
@@ -80,9 +80,7 @@ static const int gisb_offsets_bcm7400[] = {
 static const int gisb_offsets_bcm7435[] = {
 	[ARB_TIMER]		= 0x00c,
 	[ARB_ERR_CAP_CLR]	= 0x168,
-	[ARB_ERR_CAP_HI_ADDR]	= -1,
 	[ARB_ERR_CAP_ADDR]	= 0x16c,
-	[ARB_ERR_CAP_DATA]	= 0x170,
 	[ARB_ERR_CAP_STATUS]	= 0x174,
 	[ARB_ERR_CAP_MASTER]	= 0x178,
 };
@@ -90,9 +88,7 @@ static const int gisb_offsets_bcm7435[] = {
 static const int gisb_offsets_bcm7445[] = {
 	[ARB_TIMER]		= 0x008,
 	[ARB_ERR_CAP_CLR]	= 0x7e4,
-	[ARB_ERR_CAP_HI_ADDR]	= 0x7e8,
 	[ARB_ERR_CAP_ADDR]	= 0x7ec,
-	[ARB_ERR_CAP_DATA]	= 0x7f0,
 	[ARB_ERR_CAP_STATUS]	= 0x7f4,
 	[ARB_ERR_CAP_MASTER]	= 0x7f8,
 };
@@ -203,9 +199,7 @@ static int brcmstb_gisb_arb_decode_addr(struct brcmstb_gisb_arb_device *gdev,
 
 	/* Read the address and master */
 	arb_addr = gisb_read(gdev, ARB_ERR_CAP_ADDR) & 0xffffffff;
-#if (IS_ENABLED(CONFIG_PHYS_ADDR_T_64BIT))
-	arb_addr |= (u64)gisb_read(gdev, ARB_ERR_CAP_HI_ADDR) << 32;
-#endif
+
 	master = gisb_read(gdev, ARB_ERR_CAP_MASTER);
 
 	m_name = brcmstb_gisb_master_to_str(gdev, master);
@@ -324,6 +318,7 @@ static const struct of_device_id brcmstb_gisb_arb_of_match[] = {
 	{ .compatible = "brcm,bcm7445-gisb-arb", .data = gisb_offsets_bcm7445 },
 	{ .compatible = "brcm,bcm7435-gisb-arb", .data = gisb_offsets_bcm7435 },
 	{ .compatible = "brcm,bcm7400-gisb-arb", .data = gisb_offsets_bcm7400 },
+	{ .compatible = "brcm,bcm7278-gisb-arb", .data = gisb_offsets_bcm7278 },
 	{ .compatible = "brcm,bcm7038-gisb-arb", .data = gisb_offsets_bcm7038 },
 	{ },
 };

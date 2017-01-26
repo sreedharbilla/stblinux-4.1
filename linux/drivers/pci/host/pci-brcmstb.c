@@ -104,6 +104,7 @@ enum pcie_type {
 	BCM7425,
 	BCM7435,
 	GENERIC,
+	BCM7278,
 };
 
 struct pcie_cfg_data {
@@ -136,6 +137,17 @@ static const struct pcie_cfg_data bcm7435_cfg = {
 static const struct pcie_cfg_data generic_cfg = {
 	.offsets	= pcie_offsets,
 	.type		= GENERIC,
+};
+
+static const int pcie_offset_bcm7278[] = {
+	[RGR1_SW_INIT_1] = 0xc010,
+	[EXT_CFG_INDEX] = 0x9000,
+	[EXT_CFG_DATA] = 0x9004,
+};
+
+static const struct pcie_cfg_data bcm7278_cfg = {
+	.offsets	= pcie_offset_bcm7278,
+	.type		= BCM7278,
 };
 
 static void __iomem *brcm_pci_map_cfg(struct pci_bus *bus, unsigned int devfn,
@@ -360,7 +372,7 @@ static int is_pcie_link_up(struct brcm_pcie *pcie)
 	return  ((val & 0x30) == 0x30) ? 1 : 0;
 }
 
-
+#ifdef CONFIG_PCI_MSI
 static inline struct brcm_msi *to_brcm_msi(struct msi_controller *chip)
 {
 	return container_of(chip, struct brcm_msi, chip);
@@ -597,6 +609,40 @@ msi_en_err:
 	irq_domain_remove(msi->domain);
 	return err;
 }
+#else
+static inline int brcm_pcie_enable_msi(struct brcm_pcie *pcie, int nr)
+{
+	return 0;
+}
+#endif
+
+static inline void brcm_pcie_bridge_sw_init_set(struct brcm_pcie *pcie,
+						unsigned int val)
+{
+	unsigned int offset = 0;
+
+	if (pcie->type != BCM7278)
+		wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x2, 1, val);
+	else {
+		/* The two PCIE instance on 7278 are not even consistent with
+		 * respect to each other for internal offsets, here we offset
+		 * by 0x14000 + RGR1_SW_INIT_1's relative offset to account for
+		 * that.
+		 */
+		offset = pcie->num ? 0x14010 : pcie->reg_offsets[RGR1_SW_INIT_1];
+		wr_fld_rb(pcie->base + offset, 0x1, 0, val);
+	}
+}
+
+static inline void brcm_pcie_perst_set(struct brcm_pcie *pcie,
+				       unsigned int val)
+{
+	if (pcie->type != BCM7278)
+		wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x00000001, 0, val);
+	else
+		/* Assert = 0, de-assert = 1 on 7278 */
+		wr_fld_rb(pcie->base + PCIE_MISC_PCIE_CTRL, 0x4, 2, !val);
+}
 
 
 static void brcm_pcie_setup_early(struct brcm_pcie *pcie)
@@ -607,22 +653,24 @@ static void brcm_pcie_setup_early(struct brcm_pcie *pcie)
 
 	/* reset the bridge and the endpoint device */
 	/* field: PCIE_BRIDGE_SW_INIT = 1 */
-	wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x00000002, 1, 1);
-	/* field: PCIE_SW_PERST = 1 */
-	wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x00000001, 0, 1);
+	brcm_pcie_bridge_sw_init_set(pcie, 1);
+
+	/* field: PCIE_SW_PERST = 1, on 7278, we start de-asserted already */
+	if (pcie->type != BCM7278)
+		brcm_pcie_perst_set(pcie, 1);
 
 	/* delay 100us */
 	udelay(100);
 
 	/* take the bridge out of reset */
 	/* field: PCIE_BRIDGE_SW_INIT = 0 */
-	wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x00000002, 1, 0);
+	brcm_pcie_bridge_sw_init_set(pcie, 0);
 
 	/* Grab the PCIe hw revision number */
 	pcie->rev = __raw_readl(base + PCIE_MISC_REVISION) & 0xffff;
 
 	/* enable SCB_MAX_BURST_SIZE | CSR_READ_UR_MODE | SCB_ACCESS_EN */
-	if (pcie->type == GENERIC)
+	if (pcie->type == GENERIC || pcie->type == BCM7278)
 		__raw_writel(0x81e03000, base + PCIE_MISC_MISC_CTRL);
 	else
 		__raw_writel(0x00103000, base + PCIE_MISC_MISC_CTRL);
@@ -678,7 +726,7 @@ static void brcm_pcie_setup_early(struct brcm_pcie *pcie)
 
 	/* take the EP device out of reset */
 	/* field: PCIE_SW_PERST = 0 */
-	wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x00000001, 0, 0);
+	brcm_pcie_perst_set(pcie, 0);
 }
 
 
@@ -799,14 +847,14 @@ static void turn_off(struct brcm_pcie *pcie)
 {
 	void __iomem *base = pcie->base;
 	/* Reset endpoint device */
-	wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x00000001, 0, 1);
+	brcm_pcie_perst_set(pcie, 1);
 	/* deassert request for L23 in case it was asserted */
 	wr_fld_rb(base + PCIE_MISC_PCIE_CTRL, 0x1, 0, 0);
 	/* SERDES_IDDQ = 1 */
 	wr_fld_rb(base + PCIE_MISC_HARD_PCIE_HARD_DEBUG, 0x08000000,
 		  27, 1);
 	/* Shutdown PCIe bridge */
-	wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x00000002, 1, 1);
+	brcm_pcie_bridge_sw_init_set(pcie, 1);
 }
 
 
@@ -874,7 +922,7 @@ static int brcm_pcie_resume(struct device *dev)
 	clk_enable(pcie->clk);
 
 	/* Take bridge out of reset so we can access the SERDES reg */
-	wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), 0x00000002, 1, 0);
+	brcm_pcie_bridge_sw_init_set(pcie, 0);
 
 	/* SERDES_IDDQ = 0 */
 	wr_fld_rb(base + PCIE_MISC_HARD_PCIE_HARD_DEBUG, 0x08000000,
@@ -976,6 +1024,7 @@ DECLARE_PCI_FIXUP_EARLY(PCI_ANY_ID, PCI_ANY_ID, brcm_pcibios_fixup);
 static const struct of_device_id brcm_pci_match[] = {
 	{ .compatible = "brcm,bcm7425-pcie", .data = &bcm7425_cfg },
 	{ .compatible = "brcm,bcm7435-pcie", .data = &bcm7435_cfg },
+	{ .compatible = "brcm,bcm7278-pcie", .data = &bcm7278_cfg },
 	{ .compatible = "brcm,pci-plat-dev", .data = &generic_cfg },
 	{},
 };
@@ -1065,7 +1114,8 @@ static int brcm_pci_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	if (len == sizeof(u32) * 4 * 7 && pcie->type == GENERIC) {
+	if (len == sizeof(u32) * 4 * 7 &&
+	    (pcie->type == GENERIC || pcie->type == BCM7278)) {
 		/* broken method for getting INT{ABCD} */
 		dev_info(&pdev->dev, "adjusting to legacy (broken) pcie DT\n");
 		pcie->broken_pcie_irq_map_dt = true;

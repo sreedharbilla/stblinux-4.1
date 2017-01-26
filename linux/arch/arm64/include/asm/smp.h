@@ -73,4 +73,7 @@ extern int __cpu_disable(void);
 extern void __cpu_die(unsigned int cpu);
 extern void cpu_die(void);
 
+extern int set_ipi_handler(int ipinr, void *handler, char *desc);
+extern void clear_ipi_handler(int ipinr);
+
 #endif /* ifndef __ASM_SMP_H */

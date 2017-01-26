@@ -208,6 +208,31 @@ static int bcm7xxx_28nm_e0_plus_afe_config_init(struct phy_device *phydev)
 	return 0;
 }
 
+static int bcm7xxx_28nm_a0_patch_afe_config_init(struct phy_device *phydev)
+{
+	/* +1 RC_CAL codes for RL centering for both LT and HT conditions */
+	phy_write_misc(phydev, AFE_RXCONFIG_2, 0xd003);
+
+	/* Cut master bias current by 2% to compensate for RC_CAL offset */
+	phy_write_misc(phydev, DSP_TAP10, 0x791b);
+
+	/* Improve hybrid leakage */
+	phy_write_misc(phydev, AFE_HPF_TRIM_OTHERS, 0x10e3);
+
+	/* Change rx_on_tune 8 to 0xf */
+	phy_write_misc(phydev, 0x21, 0x2, 0x87f6);
+
+	/* Change 100Tx EEE bandwidth */
+	phy_write_misc(phydev, 0x22, 0x2, 0x017d);
+
+	/* Enable ffe zero detection for Vitesse interoperability */
+	phy_write_misc(phydev, 0x26, 0x2, 0x0015);
+
+	r_rc_cal_reset(phydev);
+
+	return 0;
+}
+
 static int bcm7xxx_apd_enable(struct phy_device *phydev)
 {
 	int val;
@@ -261,6 +286,12 @@ static int bcm7xxx_28nm_config_init(struct phy_device *phydev)
 	u8 patch = PHY_BRCM_7XXX_PATCH(phydev->dev_flags);
 	int ret = 0;
 
+	/* Newer devices have moved the revision information back into a
+	 * standard location in MII_PHYS_ID[23]
+	 */
+	if (rev == 0)
+		rev = phydev->phy_id & ~phydev->drv->phy_id_mask;
+
 	pr_info_once("%s: %s PHY revision: 0x%02x, patch: %d\n",
 		     dev_name(&phydev->dev), phydev->drv->name, rev, patch);
 
@@ -283,6 +314,9 @@ static int bcm7xxx_28nm_config_init(struct phy_device *phydev)
 	/* Rev G0 introduces a roll over */
 	case 0x10:
 		ret = bcm7xxx_28nm_e0_plus_afe_config_init(phydev);
+		break;
+	case 0x01:
+		ret = bcm7xxx_28nm_a0_patch_afe_config_init(phydev);
 		break;
 	default:
 		break;
@@ -655,6 +689,7 @@ static struct phy_driver bcm7xxx_driver[] = {
 	BCM7XXX_28NM_EPHY(PHY_ID_BCM7260, "Broadcom BCM7260"),
 	BCM7XXX_28NM_EPHY(PHY_ID_BCM7268, "Broadcom BCM7268"),
 	BCM7XXX_28NM_EPHY(PHY_ID_BCM7271, "Broadcom BCM7271"),
+	BCM7XXX_28NM_GPHY(PHY_ID_BCM7278, "Broadcom BCM7278"),
 	BCM7XXX_28NM_GPHY(PHY_ID_BCM7364, "Broadcom BCM7364"),
 	BCM7XXX_28NM_GPHY(PHY_ID_BCM7366, "Broadcom BCM7366"),
 	BCM7XXX_28NM_GPHY(PHY_ID_BCM74371, "Broadcom BCM74371"),
@@ -672,6 +707,7 @@ static struct mdio_device_id __maybe_unused bcm7xxx_tbl[] = {
 	{ PHY_ID_BCM7260, 0xfffffff0, },
 	{ PHY_ID_BCM7268, 0xfffffff0, },
 	{ PHY_ID_BCM7271, 0xfffffff0, },
+	{ PHY_ID_BCM7278, 0xfffffff0, },
 	{ PHY_ID_BCM7364, 0xfffffff0, },
 	{ PHY_ID_BCM7366, 0xfffffff0, },
 	{ PHY_ID_BCM7425, 0xfffffff0, },

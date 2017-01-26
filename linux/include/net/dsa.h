@@ -103,6 +103,11 @@ struct dsa_switch_tree {
 	enum dsa_tag_protocol	tag_protocol;
 
 	/*
+	 * Original copy of the master netdev ethtool_ops
+	 */
+	struct ethtool_ops	master_ethtool_ops;
+
+	/*
 	 * The switch and port to which the CPU is attached.
 	 */
 	s8			cpu_switch;
@@ -308,6 +313,13 @@ struct dsa_switch_driver {
 	int	(*fdb_dump)(struct dsa_switch *ds, int port,
 			    struct net_device *dev, struct sk_buff *skb,
 			    struct netlink_callback *cb, int idx);
+	/*
+	 * RXNFC
+	 */
+	int	(*get_rxnfc)(struct dsa_switch *ds, int port,
+			     struct ethtool_rxnfc *nfc, u32 *rule_locs);
+	int	(*set_rxnfc)(struct dsa_switch *ds, int port,
+			     struct ethtool_rxnfc *nfc);
 };
 
 void register_switch_driver(struct dsa_switch_driver *type);

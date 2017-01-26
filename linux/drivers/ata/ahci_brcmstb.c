@@ -39,7 +39,6 @@
  #define PIODATA_ENDIAN_SHIFT				6
   #define ENDIAN_SWAP_NONE				0
   #define ENDIAN_SWAP_FULL				2
- #define OVERRIDE_HWINIT				BIT(16)
 #define SATA_TOP_CTRL_TP_CTRL				0x8
 #define SATA_TOP_CTRL_PHY_CTRL				0xc
  #define SATA_TOP_CTRL_PHY_CTRL_1			0x0
@@ -121,18 +120,13 @@ static inline void brcm_sata_writereg(u32 val, void __iomem *addr)
 static void brcm_sata_alpm_init(struct ahci_host_priv *hpriv)
 {
 	int i;
-	u32 bus_ctrl, port_ctrl, host_caps;
+	u32 port_ctrl, host_caps;
 	struct brcm_ahci_priv *priv = hpriv->plat_data;
 
 	/*Enable support for ALPM */
-	bus_ctrl = brcm_sata_readreg(priv->top_ctrl
-			+ SATA_TOP_CTRL_BUS_CTRL);
-	brcm_sata_writereg(bus_ctrl | OVERRIDE_HWINIT,
-		priv->top_ctrl + SATA_TOP_CTRL_BUS_CTRL);
 	host_caps = readl(hpriv->mmio + HOST_CAP);
-	writel(host_caps | HOST_CAP_ALPM, hpriv->mmio);
-	brcm_sata_writereg(bus_ctrl,
-		priv->top_ctrl + SATA_TOP_CTRL_BUS_CTRL);
+	if (!(host_caps & HOST_CAP_ALPM))
+		hpriv->flags |= AHCI_HFLAG_YES_ALPM;
 
 	/*
 	 * Adjust timeout to allow PLL sufficient time to lock while waking
@@ -270,42 +264,6 @@ static void brcm_sata_clk_disable(struct brcm_ahci_priv *priv)
 	clk_disable_unprepare(priv->clk);
 }
 
-static void brcm_sata_quirks(struct platform_device *pdev,
-			     struct brcm_ahci_priv *priv)
-{
-	if (priv->quirks & BRCM_AHCI_QUIRK_NONCQ) {
-		void __iomem *ctrl = priv->top_ctrl + SATA_TOP_CTRL_BUS_CTRL;
-		void __iomem *ahci;
-		struct resource *res;
-		u32 reg;
-
-		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
-						   "ahci");
-		ahci = devm_ioremap_resource(&pdev->dev, res);
-		if (IS_ERR(ahci))
-			return;
-
-		reg = brcm_sata_readreg(ctrl);
-		reg |= OVERRIDE_HWINIT;
-		brcm_sata_writereg(reg, ctrl);
-
-		/* Clear out the NCQ bit so the AHCI driver will not issue
-		 * FPDMA/NCQ commands.
-		 */
-		reg = readl(ahci + HOST_CAP);
-		reg &= ~HOST_CAP_NCQ;
-		writel(reg, ahci + HOST_CAP);
-
-		reg = brcm_sata_readreg(ctrl);
-		reg &= ~OVERRIDE_HWINIT;
-		brcm_sata_writereg(reg, ctrl);
-
-		devm_iounmap(&pdev->dev, ahci);
-		devm_release_mem_region(&pdev->dev, res->start,
-					resource_size(res));
-	}
-}
-
 static void brcm_sata_init(struct brcm_ahci_priv *priv)
 {
 	/* Configure endianness */
@@ -376,8 +334,6 @@ static int brcm_ahci_probe(struct platform_device *pdev)
 		priv->quirks |= BRCM_AHCI_QUIRK_SKIP_PHY_ENABLE;
 	}
 
-	brcm_sata_quirks(pdev, priv);
-
 	brcm_sata_init(priv);
 
 	priv->port_mask = brcm_ahci_get_portmask(pdev, priv);
@@ -392,6 +348,9 @@ static int brcm_ahci_probe(struct platform_device *pdev)
 	hpriv->plat_data = priv;
 
 	brcm_sata_alpm_init(hpriv);
+	if (priv->quirks & BRCM_AHCI_QUIRK_NONCQ)
+		hpriv->flags |= AHCI_HFLAG_NO_NCQ;
+	hpriv->flags |= AHCI_HFLAG_NO_WRITE_TO_RO;
 
 	ret = ahci_platform_enable_resources(hpriv);
 	if (ret)
