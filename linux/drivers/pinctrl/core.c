@@ -987,9 +987,6 @@ int pinctrl_select_state(struct pinctrl *p, struct pinctrl_state *state)
 	struct pinctrl_state *old_state = p->state;
 	int ret;
 
-	if (p->state == state)
-		return 0;
-
 	if (p->state) {
 		/*
 		 * For each pinmux setting in the old state, forget SW's record

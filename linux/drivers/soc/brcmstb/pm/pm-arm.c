@@ -113,6 +113,7 @@ struct brcmstb_pm_control {
 	u32 warm_boot_offset;
 	u32 phy_a_standby_ctrl_offs;
 	u32 phy_b_standby_ctrl_offs;
+	bool needs_ddr_pad;
 	struct platform_device *pdev;
 };
 
@@ -419,6 +420,9 @@ static inline void shimphy_set(u32 value, u32 mask)
 {
 	int i;
 
+	if (!ctrl.needs_ddr_pad)
+		return;
+
 	for (i = 0; i < ctrl.num_memc; i++) {
 		u32 tmp;
 
@@ -578,10 +582,12 @@ static void *brcmstb_pm_copy_to_sram(void *fn, size_t len)
 static int brcmstb_pm_s2(void)
 {
 	/* A previous S3 can set a value hazardous to S2, so make sure. */
-	if (ctrl.s3entry_method == 1)
+	if (ctrl.s3entry_method == 1) {
 		shimphy_set((PWRDWN_SEQ_NO_SEQUENCING <<
 			    SHIMPHY_PAD_S3_PWRDWN_SEQ_SHIFT),
 			    ~SHIMPHY_PAD_S3_PWRDWN_SEQ_MASK);
+		ddr_ctrl_set(false);
+	}
 
 	brcmstb_pm_do_s2_sram = brcmstb_pm_copy_to_sram(&brcmstb_pm_do_s2,
 			brcmstb_pm_do_s2_sz);
@@ -1037,10 +1043,13 @@ static int brcmstb_pm_standby(bool deep_standby)
 	if (brcmstb_pm_handshake())
 		return -EIO;
 
-	if (deep_standby)
+	if (deep_standby) {
+		/* Save DTU registers for S3 only. SAGE won't let us for S2. */
+		dtu_save();
 		ret = brcmstb_pm_s3();
-	else
+	} else {
 		ret = brcmstb_pm_s2();
+	}
 	if (ret)
 		pr_err("%s: standby failed\n", __func__);
 
@@ -1195,13 +1204,34 @@ static const struct of_device_id ddr_phy_dt_ids[] = {
 	{}
 };
 
+struct ddr_seq_ofdata {
+	bool needs_ddr_pad;
+	u32 warm_boot_offset;
+};
+
+static const struct ddr_seq_ofdata ddr_seq_b22 = {
+	.needs_ddr_pad = false,
+	.warm_boot_offset = 0x2c,
+};
+
+static const struct ddr_seq_ofdata ddr_seq = {
+	.needs_ddr_pad = true,
+};
+
 static const struct of_device_id ddr_shimphy_dt_ids[] = {
 	{ .compatible = "brcm,brcmstb-ddr-shimphy-v1.0" },
 	{}
 };
 
 static const struct of_device_id brcmstb_memc_of_match[] = {
-	{ .compatible = "brcm,brcmstb-memc-ddr" },
+	{
+		.compatible = "brcm,brcmstb-memc-ddr-rev-b.2.2",
+		.data = &ddr_seq_b22,
+	},
+	{
+		.compatible = "brcm,brcmstb-memc-ddr",
+		.data = &ddr_seq,
+	},
 	{},
 };
 
@@ -1242,10 +1272,12 @@ static struct notifier_block brcmstb_pm_panic_nb = {
 
 static int brcmstb_pm_probe(struct platform_device *pdev)
 {
+	const struct ddr_phy_ofdata *ddr_phy_data;
+	const struct ddr_seq_ofdata *ddr_seq_data;
+	const struct of_device_id *of_id = NULL;
 	struct device_node *dn;
 	void __iomem *base;
 	int ret, i;
-	const struct ddr_phy_ofdata *ddr_phy_data;
 
 	/* AON ctrl registers */
 	base = brcmstb_ioremap_match(aon_ctrl_dt_ids, 0, NULL);
@@ -1288,10 +1320,6 @@ static int brcmstb_pm_probe(struct platform_device *pdev)
 	 */
 	ctrl.warm_boot_offset = ddr_phy_data->warm_boot_offset;
 
-	pr_debug("PM: supports warm boot:%d, method:%d, wboffs:%x\n",
-		ctrl.support_warm_boot, ctrl.s3entry_method,
-		ctrl.warm_boot_offset);
-
 	/* DDR SHIM-PHY registers */
 	for_each_matching_node(dn, ddr_shimphy_dt_ids) {
 		i = ctrl.num_memc;
@@ -1319,9 +1347,26 @@ static int brcmstb_pm_probe(struct platform_device *pdev)
 			pr_err("error mapping DDR Sequencer %d\n", i);
 			return -ENOMEM;
 		}
+
+		of_id = of_match_node(brcmstb_memc_of_match, dn);
+		if (!of_id) {
+			iounmap(base);
+			return -EINVAL;
+		}
+
+		ddr_seq_data = of_id->data;
+		ctrl.needs_ddr_pad = ddr_seq_data->needs_ddr_pad;
+		/* Adjust warm boot offset based on the DDR sequencer */
+		if (ddr_seq_data->warm_boot_offset)
+			ctrl.warm_boot_offset = ddr_seq_data->warm_boot_offset;
+
 		ctrl.memcs[i].ddr_ctrl = base;
 		i++;
 	}
+
+	pr_debug("PM: supports warm boot:%d, method:%d, wboffs:%x\n",
+		ctrl.support_warm_boot, ctrl.s3entry_method,
+		ctrl.warm_boot_offset);
 
 	dn = of_find_matching_node(NULL, sram_dt_ids);
 	if (!dn) {

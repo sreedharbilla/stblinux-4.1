@@ -5,6 +5,33 @@
 
 static struct brcmstb_memory bm;
 
+static void test_kva_mem_map(struct brcmstb_range *range)
+{
+	size_t size = range->size / 2;
+	void *addr;
+	unsigned long *data, check;
+
+	addr = brcmstb_memory_kva_map_phys(range->addr, size, true);
+	if (!addr) {
+		pr_err("failed to map %llu MiB at %#016llx\n",
+		       size / SZ_1M, range->addr);
+		return;
+	}
+
+	pr_info("%s: virt: %p, phys: 0x%lx\n",
+		__func__, addr, virt_to_phys(addr));
+
+	/* Now try to read from there as well */
+	data = addr;
+	*data = 0xdeadbeefUL;
+	check = *data;
+	if (check != 0xdeadbeefUL)
+		pr_err("memory mismatch: %llu != %llu\n",
+			check, 0xdeadbeefUL);
+
+	brcmstb_memory_kva_unmap(addr);
+}
+
 static int __init test_init(void)
 {
 	struct brcmstb_range *range;
@@ -52,6 +79,7 @@ static int __init test_init(void)
 		range = &bm.bmem.range[i];
 		pr_info(" %llu MiB at %#016llx\n",
 				range->size / SZ_1M, range->addr);
+		test_kva_mem_map(range);
 	}
 
 	pr_info("cma info:\n");

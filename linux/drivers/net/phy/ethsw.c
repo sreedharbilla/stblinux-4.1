@@ -755,6 +755,11 @@ static void bcm53x25_remove(struct phy_device *phydev)
 	remove_proc_entry("switch", NULL);
 }
 
+static int bcm53x25_soft_reset(struct phy_device *phydev)
+{
+	return 0;
+}
+
 static struct phy_driver bcm53x25_driver[] = {
 	{
 		/* Match all BCM53125 revisions */
@@ -768,6 +773,7 @@ static struct phy_driver bcm53x25_driver[] = {
 		.config_aneg	= bcm53x25_config_aneg,
 		.read_status	= bcm53x25_read_status,
 		.resume		= bcm53x25_ethsw_resume,
+		.soft_reset	= bcm53x25_soft_reset,
 		.driver		= { .owner = THIS_MODULE },
 	},
 	{
@@ -781,6 +787,7 @@ static struct phy_driver bcm53x25_driver[] = {
 		.config_aneg	= bcm53x25_config_aneg,
 		.read_status	= bcm53x25_read_status,
 		.resume		= bcm53x25_ethsw_resume,
+		.soft_reset	= bcm53x25_soft_reset,
 		.driver		= { .owner = THIS_MODULE },
 	},
 };

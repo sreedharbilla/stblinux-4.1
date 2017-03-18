@@ -32,9 +32,6 @@
 
 &moca {
 	status = "okay";
-
-	pinctrl-names = "default";
-	pinctrl-0 = <&moca_bsc_m3_pins>;
 };
 
 &ehci0 {
@@ -142,10 +139,15 @@
 
 &sdhci1 {
 	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&hif_emmc_pins>;
 };
 
 &brcm_pmx_core {
 	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&moca_bsc_m3_pins>;
 
 	sdio0_core_pins: pinmux_sdio0_pins {
 		pinctrl-single,bits = <
@@ -185,8 +187,6 @@
 &brcm_pmx_hif_emmc_pinctrl {
 	status = "okay";
 
-	pinctrl-names = "default";
-	pinctrl-0 = <&hif_emmc_pins>;
 	hif_emmc_pins: pinmux_all_pins {
 		pinctrl-single,bits = <
 			0x0 0x00000001 0x00000003 /* HIF_TOP_CTRL.EMMC_PIN_SEL*/

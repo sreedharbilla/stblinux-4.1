@@ -34,7 +34,8 @@
 extern int brcm_usb_probe(struct platform_device *pdev,
 			const struct hc_driver *hc_driver,
 			struct usb_hcd **hcdptr,
-			struct clk **hcd_clk_ptr);
+			struct clk **hcd_clk_ptr,
+			struct phy **hcd_phy_ptr);
 extern int brcm_usb_remove(struct platform_device *pdev, struct clk *hcd_clk);
 
 #endif /* _USB_BRCM_H */

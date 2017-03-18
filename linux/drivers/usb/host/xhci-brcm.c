@@ -17,6 +17,7 @@
 #include <linux/of.h>
 #include <linux/dma-mapping.h>
 #include <linux/clk.h>
+#include <linux/phy/phy.h>
 
 #include "xhci.h"
 #include "usb-brcm.h"
@@ -36,6 +37,7 @@ struct brcm_hcd {
 	 */
 	struct xhci_hcd *xhci_hcd_ptr;
 	struct clk *hcd_clk;
+	struct phy *hcd_phy;
 };
 
 static struct brcm_hcd *hcd_to_brcm(struct usb_hcd *hcd)
@@ -72,16 +74,17 @@ static int xhci_brcm_probe(struct platform_device *pdev)
 	struct clk		*usb_clk;
 	struct brcm_hcd		*brcm_hcd_ptr;
 	int			ret;
+	struct phy *phy;
 
 	ret = dma_coerce_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
 	if (ret)
 		return ret;
-
-	ret = brcm_usb_probe(pdev, &xhci_brcm_hc_driver, &hcd, &usb_clk);
+	ret = brcm_usb_probe(pdev, &xhci_brcm_hc_driver, &hcd, &usb_clk, &phy);
 	if (ret)
 		return ret;
 	brcm_hcd_ptr = hcd_to_brcm(hcd);
 	brcm_hcd_ptr->hcd_clk = usb_clk;
+	brcm_hcd_ptr->hcd_phy = phy;
 
 	/* USB 2.0 roothub is stored in the platform_device now. */
 	hcd = platform_get_drvdata(pdev);
@@ -128,7 +131,7 @@ static int xhci_brcm_remove(struct platform_device *dev)
 
 	brcm_usb_remove(dev, brcm_hcd_ptr->hcd_clk);
 	kfree(xhci);
-
+	phy_exit(brcm_hcd_ptr->hcd_phy);
 	return 0;
 }
 

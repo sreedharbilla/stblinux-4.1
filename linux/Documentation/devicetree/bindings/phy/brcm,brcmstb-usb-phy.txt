@@ -1,0 +1,36 @@
+Broadcom STB USB PHY
+
+Required properties:
+ - compatible: "brcm,brcmstb-usb-phy" or "brcm,usb-phy"
+ - reg: two offset and length pairs. The second pair specifies optional
+        registers used by some of the SoCs that support USB 3.x
+ - #phy-cells: Shall be 1 as it expects one argument for setting
+	       the type of the PHY. Possible values are 0 (1.1 and 2.0),
+	       1 (3.x)
+
+Optional Properties:
+- clocks : phandle + clock specifier for the phy clocks
+- clock-names: string, clock name
+- ipp: Invert Port Power. Possible values are: 0 (Don't invert),
+  1 (Invert)
+- ioc: Invert Over Current detection. Possible values are: 0 (Don't invert),
+  1 (Invert)
+- has_xhci: Boolean indicating an optional 3.x only XHCI controller.
+- has_xhci_only: Boolean indicating an XHCI controller that supports
+  1.1, 2.0 and 3.0 devices
+- device: PHY Device mode. Possible values are: 0 (Host), 1 (Device)
+  or 2 (DRD)
+
+Example:
+
+usbphy_0: usb-phy@f0470200 {
+	reg = <0xf0470200 0xb8>,
+		<0xf0471940 0x6c0>;
+	compatible = "brcm,brcmstb-usb-phy";
+	#phy-cells = <1>;
+	ioc = <1>;
+	ipp = <1>;
+	has_xhci;
+	clocks = <&sw_usb20>;
+	clock-names = "sw_usb";
+};

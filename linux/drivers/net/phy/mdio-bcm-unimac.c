@@ -16,6 +16,7 @@
 #include <linux/module.h>
 #include <linux/io.h>
 #include <linux/delay.h>
+#include <linux/clk.h>
 
 #include <linux/of.h>
 #include <linux/of_platform.h>
@@ -133,6 +134,7 @@ static int unimac_mdio_reset(struct mii_bus *bus)
 {
 	struct device_node *np = bus->dev.of_node;
 	struct device_node *child;
+	struct clk *clk = NULL;
 	u32 read_mask = 0;
 	int addr;
 
@@ -145,6 +147,10 @@ static int unimac_mdio_reset(struct mii_bus *bus)
 				continue;
 
 			read_mask |= 1 << addr;
+
+			clk = of_clk_get(child, 0);
+			if (!IS_ERR(clk))
+				clk_prepare_enable(clk);
 		}
 	}
 

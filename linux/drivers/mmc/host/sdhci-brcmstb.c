@@ -21,8 +21,15 @@
 #include <linux/mmc/host.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/pinctrl/pinctrl-state.h>
 
 #include "sdhci-pltfm.h"
+
+struct sdhci_brcmstb_priv {
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pins_default;
+};
 
 static int sdhci_brcmstb_enable_dma(struct sdhci_host *host)
 {
@@ -51,7 +58,11 @@ static int sdhci_brcmstb_resume(struct device *dev)
 {
 	struct sdhci_host *host = dev_get_drvdata(dev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_brcmstb_priv *priv = pltfm_host->priv;
 	int err;
+
+	if (!IS_ERR(priv->pins_default))
+		pinctrl_select_state(priv->pinctrl, priv->pins_default);
 
 	err = clk_enable(pltfm_host->clk);
 	if (err)
@@ -81,6 +92,7 @@ static int sdhci_brcmstb_probe(struct platform_device *pdev)
 	struct device_node *dn = pdev->dev.of_node;
 	struct sdhci_host *host;
 	struct sdhci_pltfm_host *pltfm_host;
+	struct sdhci_brcmstb_priv *priv;
 	struct clk *clk;
 	int res;
 
@@ -99,17 +111,33 @@ static int sdhci_brcmstb_probe(struct platform_device *pdev)
 		goto undo_clk_prep;
 	}
 
+	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
+	if (!priv) {
+		res = -ENOMEM;
+		goto undo_clk_prep;
+	}
+
 	/* Enable MMC_CAP2_HC_ERASE_SZ for better max discard calculations */
 	host->mmc->caps2 |= MMC_CAP2_HC_ERASE_SZ;
 
 	sdhci_get_of_property(pdev);
 	mmc_of_parse(host->mmc);
 
+	priv->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(priv->pinctrl)) {
+		res = PTR_ERR(priv->pinctrl);
+		goto undo_pltfm_init;
+	}
+
+	priv->pins_default = pinctrl_lookup_state(priv->pinctrl,
+						  PINCTRL_STATE_DEFAULT);
+
 	res = sdhci_add_host(host);
 	if (res)
 		goto undo_pltfm_init;
 
 	pltfm_host = sdhci_priv(host);
+	pltfm_host->priv = priv;
 	pltfm_host->clk = clk;
 	return res;
 

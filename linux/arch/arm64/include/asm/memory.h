@@ -72,13 +72,6 @@
 #error Top of 64-bit user space clashes with start of module space
 #endif
 
-/*
- * Physical vs virtual RAM address space conversion.  These are
- * private definitions which should NOT be used outside memory.h
- * files.  Use virt_to_phys/phys_to_virt/__pa/__va instead.
- */
-#define __virt_to_phys(x)	(((phys_addr_t)(x) - PAGE_OFFSET + PHYS_OFFSET))
-#define __phys_to_virt(x)	((unsigned long)((x) - PHYS_OFFSET + PAGE_OFFSET))
 
 /*
  * Convert a physical address to a Page Frame Number and back
@@ -130,6 +123,22 @@ extern phys_addr_t		memstart_addr;
  * of RAM in the mem_map as well.
  */
 #define PHYS_PFN_OFFSET	(PHYS_OFFSET >> PAGE_SHIFT)
+
+/*
+ * Physical vs virtual RAM address space conversion.  These are
+ * private definitions which should NOT be used outside memory.h
+ * files.  Use virt_to_phys/phys_to_virt/__pa/__va instead.
+ */
+#define __is_lm_address(addr)   (!!((addr) & BIT(VA_BITS - 1)))
+
+#define __virt_to_phys_nodebug(x)	(((phys_addr_t)(x) - PAGE_OFFSET + PHYS_OFFSET))
+
+#ifdef CONFIG_DEBUG_VIRTUAL
+extern phys_addr_t __virt_to_phys(unsigned long x);
+#else
+#define __virt_to_phys(x)	__virt_to_phys_nodebug(x)
+#endif
+#define __phys_to_virt(x)	((unsigned long)((x) - PHYS_OFFSET + PAGE_OFFSET))
 
 /*
  * Note: Drivers should NOT use these.  They are the wrong

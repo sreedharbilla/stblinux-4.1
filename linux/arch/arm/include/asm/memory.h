@@ -111,6 +111,13 @@
 
 #endif /* !CONFIG_MMU */
 
+#ifdef CONFIG_XIP_KERNEL
+#define KERNEL_START		_sdata
+#else
+#define KERNEL_START		_stext
+#endif
+#define KERNEL_END		_end
+
 /*
  * We fix the TCM memories max 32 KiB ITCM resp DTCM at these
  * locations
@@ -220,7 +227,7 @@ extern const void *__pv_table_begin, *__pv_table_end;
 	: "r" (x), "I" (__PV_BITS_31_24)		\
 	: "cc")
 
-static inline phys_addr_t __virt_to_phys(unsigned long x)
+static inline phys_addr_t __virt_to_phys_nodebug(unsigned long x)
 {
 	phys_addr_t t;
 
@@ -252,7 +259,7 @@ static inline unsigned long __phys_to_virt(phys_addr_t x)
 #define PHYS_OFFSET	PLAT_PHYS_OFFSET
 #define PHYS_PFN_OFFSET	((unsigned long)(PHYS_OFFSET >> PAGE_SHIFT))
 
-static inline phys_addr_t __virt_to_phys(unsigned long x)
+static inline phys_addr_t __virt_to_phys_nodebug(unsigned long x)
 {
 	return (phys_addr_t)x - PAGE_OFFSET + PHYS_OFFSET;
 }
@@ -261,11 +268,16 @@ static inline unsigned long __phys_to_virt(phys_addr_t x)
 {
 	return x - PHYS_OFFSET + PAGE_OFFSET;
 }
+#endif
 
 #define virt_to_pfn(kaddr) \
 	((((unsigned long)(kaddr) - PAGE_OFFSET) >> PAGE_SHIFT) + \
 	 PHYS_PFN_OFFSET)
 
+#ifdef CONFIG_DEBUG_VIRTUAL
+extern phys_addr_t __virt_to_phys(unsigned long x);
+#else
+#define __virt_to_phys(x)	__virt_to_phys_nodebug(x)
 #endif
 
 /*

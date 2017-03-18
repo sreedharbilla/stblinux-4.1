@@ -2604,8 +2604,10 @@ serial8250_do_set_termios(struct uart_port *port, struct ktermios *termios,
 	 */
 	if (up->capabilities & UART_CAP_AFE && port->fifosize >= 32) {
 		up->mcr &= ~UART_MCR_AFE;
-		if (termios->c_cflag & CRTSCTS)
+		if (termios->c_cflag & CRTSCTS) {
+			up->port.status |= UPSTAT_AUTOCTS;
 			up->mcr |= UART_MCR_AFE;
+		}
 	}
 
 	/*

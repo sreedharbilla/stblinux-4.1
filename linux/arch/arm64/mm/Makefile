@@ -5,3 +5,4 @@ obj-y				:= dma-mapping.o extable.o fault.o init.o \
 obj-$(CONFIG_HUGETLB_PAGE)	+= hugetlbpage.o
 obj-$(CONFIG_ARM64_PTDUMP)	+= dump.o
 obj-$(CONFIG_CACHE_B53_RAC)	+= cache-b53-rac.o
+obj-$(CONFIG_DEBUG_VIRTUAL)	+= physaddr.o

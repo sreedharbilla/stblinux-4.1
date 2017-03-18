@@ -22,13 +22,11 @@ ifneq ($(CONFIG_USB_XHCI_RCAR), )
 	xhci-plat-hcd-y		+= xhci-rcar.o
 endif
 
-usb-brcm-glue-y := usb-brcm.o usb-brcm-common-init.o
-
 obj-$(CONFIG_USB_WHCI_HCD)	+= whci/
 
 obj-$(CONFIG_PCI)		+= pci-quirks.o
 
-obj-$(CONFIG_BRCM_USB)		+= usb-brcm-glue.o
+obj-$(CONFIG_BRCM_USB)		+= usb-brcm.o
 # The order is important here because it controls the order that
 # the drivers will be initialized and we always need to init
 # the drivers in the order XHCI, EHCI and OHCI.

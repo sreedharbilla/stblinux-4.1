@@ -387,6 +387,7 @@ static void __init sdhci_disables(void *dtb)
 			fdt_nop_node(dtb, node);
 }
 
+#ifdef CONFIG_DT_BCM974XX
 static void __init cfe_die(char *fmt, ...)
 {
 	char msg[128];
@@ -442,10 +443,22 @@ no_cfe:
 	va_end(ap);
 }
 
-#ifdef CONFIG_DT_BCM974XX
+extern const char __dtb_bcm97241cbsv_begin;
+extern const char __dtb_bcm97241dcsfbtsff_begin;
+extern const char __dtb_bcm97241usff_begin;
+extern const char __dtb_bcm97425c_begin;
 extern const char __dtb_bcm97425svmb_begin;
+extern const char __dtb_bcm97425vmsmb_begin;
+extern const char __dtb_bcm97425vmsmb_sff_begin;
+extern const char __dtb_bcm97428c_begin;
+extern const char __dtb_bcm97428gn_begin;
+extern const char __dtb_bcm97428sff_begin;
+extern const char __dtb_bcm97428sv_begin;
+extern const char __dtb_bcm97429dvr_begin;
 extern const char __dtb_bcm97429svmb_begin;
+extern const char __dtb_bcm97435c_begin;
 extern const char __dtb_bcm97435svmb_begin;
+extern const char __dtb_bcm97435vmsmb_sff_begin;
 
 static void __init pick_board_dt(void *orig_dtb)
 {
@@ -456,12 +469,41 @@ static void __init pick_board_dt(void *orig_dtb)
 		printk(KERN_INFO "can't get cfe board name\n");
 		goto bail_pick_board_dt;
 	}
-	if (!strcmp(board_name, "BCM97425SVMB")) {
+
+	if (!strcmp(board_name, "BCM97241CBSV")) {
+		dtb = &__dtb_bcm97241cbsv_begin;
+	} else if (!strcmp(board_name, "BCM97241DCSFBTSFF")) {
+		dtb = &__dtb_bcm97241dcsfbtsff_begin;
+	} else if (!strcmp(board_name, "BCM97241USFF")) {
+		dtb = &__dtb_bcm97241usff_begin;
+	} else if (!strcmp(board_name, "BCM97425C")) {
+		dtb = &__dtb_bcm97425c_begin;
+	} else if (!strcmp(board_name, "BCM97425SVMB")) {
 		dtb = &__dtb_bcm97425svmb_begin;
+	} else if (!strcmp(board_name, "BCM97425VMSMB")) {
+		dtb = &__dtb_bcm97425vmsmb_begin;
+	} else if (!strcmp(board_name, "BCM97425VMSMB_SFF")) {
+		dtb = &__dtb_bcm97425vmsmb_sff_begin;
+	} else if (!strcmp(board_name, "BCM97428C")) {
+		dtb = &__dtb_bcm97428c_begin;
+	} else if (!strcmp(board_name, "7428_c")) {
+		dtb = &__dtb_bcm97428gn_begin;
+	} else if (!strcmp(board_name, "BCM97428SFF")) {
+		dtb = &__dtb_bcm97428sff_begin;
+	} else if (!strcmp(board_name, "BCM97428SV")) {
+		dtb = &__dtb_bcm97428sv_begin;
+	} else if (!strcmp(board_name, "BCM97429DVR")) {
+		dtb = &__dtb_bcm97429dvr_begin;
 	} else if (!strcmp(board_name, "BCM97429SV")) {
 		dtb = &__dtb_bcm97429svmb_begin;
+	} else if (!strcmp(board_name, "BCM97435C")) {
+		dtb = &__dtb_bcm97435c_begin;
 	} else if (!strcmp(board_name, "BCM97435SVMB")) {
 		dtb = &__dtb_bcm97435svmb_begin;
+	} else if (!strcmp(board_name, "BCM97435SVMBV20")) {
+		dtb = &__dtb_bcm97435svmb_begin;
+	} else if (!strcmp(board_name, "BCM97435VMSMB_SFF")) {
+		dtb = &__dtb_bcm97435vmsmb_sff_begin;
 	} else {
 		cfe_die("unknown board [%s]\n", board_name);
 		goto bail_pick_board_dt;

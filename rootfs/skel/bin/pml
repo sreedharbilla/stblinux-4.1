@@ -5,6 +5,7 @@ set -e
 # Only do this for the 3.14 MIPS kernel
 [ "$(uname -m)" = "mips" -a "$(uname -r | cut -d'.' -f1,2)" = "3.14" ] && {
 	pml.mips $@
+	exit $?
 }
 
 function find_waketimer {

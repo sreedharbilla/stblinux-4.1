@@ -104,6 +104,11 @@ static inline void bcm_sf2_cfp_rule_addr_set(struct bcm_sf2_priv *priv,
 	reg |= addr << XCESS_ADDR_SHIFT;
 	core_writel(priv, reg, CORE_CFP_ACC);
 }
+static inline unsigned int bcm_sf2_cfp_rule_size(struct bcm_sf2_priv *priv)
+{
+	/* Entry #0 is reserved */
+	return CFP_NUM_RULES - 1;
+}
 
 static int bcm_sf2_cfp_rule_set(struct dsa_switch *ds, int port,
 				struct ethtool_rx_flow_spec *fs)
@@ -121,6 +126,14 @@ static int bcm_sf2_cfp_rule_set(struct dsa_switch *ds, int port,
 	/* Check for unsupported extensions */
 	if ((fs->flow_type & FLOW_EXT) && (fs->m_ext.vlan_etype ||
 	     fs->m_ext.data[1]))
+		return -EINVAL;
+
+	if (fs->location != RX_CLS_LOC_ANY &&
+	    test_bit(fs->location, priv->cfp.used))
+		return -EBUSY;
+
+	if (fs->location != RX_CLS_LOC_ANY &&
+	    fs->location > bcm_sf2_cfp_rule_size(priv))
 		return -EINVAL;
 
 	ip_frag = be32_to_cpu(fs->m_ext.data[0]);
@@ -244,7 +257,11 @@ static int bcm_sf2_cfp_rule_set(struct dsa_switch *ds, int port,
 	core_writel(priv, 0xffffff0f, CORE_CFP_MASK_PORT(0));
 
 	/* Locate the first rule available */
-	rule_index = find_first_zero_bit(priv->cfp.used, CFP_NUM_RULES);
+	if (fs->location == RX_CLS_LOC_ANY)
+		rule_index = find_first_zero_bit(priv->cfp.used,
+						 bcm_sf2_cfp_rule_size(priv));
+	else
+		rule_index = fs->location;
 
 	/* Insert into TCAM now */
 	bcm_sf2_cfp_rule_addr_set(priv, rule_index);
@@ -311,6 +328,10 @@ static int bcm_sf2_cfp_rule_del(struct bcm_sf2_priv *priv, int port,
 	int ret;
 	u32 reg;
 
+	/* Refuse deletion of unused rules, and the default reserved rule */
+	if (!test_bit(loc, priv->cfp.used) || loc == 0)
+		return -EINVAL;
+
 	/* Indicate which rule we want to read */
 	bcm_sf2_cfp_rule_addr_set(priv, loc);
 
@@ -346,12 +367,6 @@ static void bcm_sf2_invert_masks(struct ethtool_rx_flow_spec *flow)
 	flow->m_ext.data[1] ^= cpu_to_be32(~0);
 }
 
-static inline unsigned int bcm_sf2_cfp_rule_size(struct bcm_sf2_priv *priv)
-{
-	/* Entry #0 is reserved */
-	return CFP_NUM_RULES - 1;
-}
-
 static int bcm_sf2_cfp_rule_get(struct bcm_sf2_priv *priv, int port,
 				struct ethtool_rxnfc *nfc, bool search)
 {
@@ -384,14 +399,15 @@ static int bcm_sf2_cfp_rule_get(struct bcm_sf2_priv *priv, int port,
 	/* There is no Port 6, so we compensate for that here */
 	if (nfc->fs.ring_cookie >= 6)
 		nfc->fs.ring_cookie++;
+	nfc->fs.ring_cookie *= 8;
 
 	/* Extract the destination queue */
 	queue_num = (reg >> NEW_TC_SHIFT) & NEW_TC_MASK;
-	nfc->fs.ring_cookie *= queue_num;
+	nfc->fs.ring_cookie += queue_num;
 
 	/* Extract the IP protocol */
 	reg = core_readl(priv, CORE_CFP_DATA_PORT(6));
-	switch ((reg >> IPPROTO_SHIFT) & IPPROTO_MASK) {
+	switch ((reg & IPPROTO_MASK) >> IPPROTO_SHIFT) {
 	case IPPROTO_TCP:
 		nfc->fs.flow_type = TCP_V4_FLOW;
 		v4_spec = &nfc->fs.h_u.tcp_ip4_spec;
@@ -401,6 +417,9 @@ static int bcm_sf2_cfp_rule_get(struct bcm_sf2_priv *priv, int port,
 		v4_spec = &nfc->fs.h_u.udp_ip4_spec;
 		break;
 	default:
+		/* Clear to exit the search process */
+		if (search)
+			core_readl(priv, CORE_CFP_DATA_PORT(7));
 		return -EINVAL;
 	}
 
@@ -524,6 +543,8 @@ int bcm_sf2_get_rxnfc(struct dsa_switch *ds, int port,
 		/* Substract the default, unusable rule */
 		nfc->rule_cnt = bitmap_weight(priv->cfp.used,
 					      CFP_NUM_RULES) - 1;
+		/* We support specifying rule locations */
+		nfc->data |= RX_CLS_LOC_SPECIAL;
 		break;
 	case ETHTOOL_GRXCLSRULE:
 		ret = bcm_sf2_cfp_rule_get(priv, port, nfc, false);

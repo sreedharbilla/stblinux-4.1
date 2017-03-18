@@ -295,22 +295,6 @@ void bcmgenet_phy_power_set(struct net_device *dev, bool enable)
 
 }
 
-static void bcmgenet_internal_phy_setup(struct net_device *dev)
-{
-	struct bcmgenet_priv *priv = netdev_priv(dev);
-	u32 reg;
-
-	/* Power up PHY */
-	bcmgenet_phy_power_set(dev, true);
-	if (!GENET_IS_V5(priv)) {
-		/* enable APD */
-		reg = bcmgenet_ext_readl(priv, EXT_EXT_PWR_MGMT);
-		reg |= EXT_PWR_DN_EN_LD;
-		bcmgenet_ext_writel(priv, reg, EXT_EXT_PWR_MGMT);
-	}
-	bcmgenet_mii_reset(dev);
-}
-
 static void bcmgenet_moca_phy_setup(struct bcmgenet_priv *priv)
 {
 	u32 reg;
@@ -362,7 +346,6 @@ int bcmgenet_mii_config(struct net_device *dev)
 			phy_name = "internal PHY";
 			phydev->supported |=
 				SUPPORTED_Pause | SUPPORTED_Asym_Pause;
-			bcmgenet_internal_phy_setup(dev);
 		} else if (priv->phy_interface == PHY_INTERFACE_MODE_MOCA) {
 			phy_name = "MoCA";
 			bcmgenet_moca_phy_setup(priv);
@@ -511,6 +494,7 @@ static int bcmgenet_mii_bus_reset(struct mii_bus *bus)
 	struct bcmgenet_priv *priv = netdev_priv(dev);
 	struct device_node *np = priv->mdio_dn;
 	struct device_node *child = NULL;
+	struct clk *clk = NULL;
 	u32 read_mask = 0;
 	int addr = 0;
 
@@ -523,6 +507,10 @@ static int bcmgenet_mii_bus_reset(struct mii_bus *bus)
 				continue;
 
 			read_mask |= 1 << addr;
+
+			clk = of_clk_get(child, 0);
+			if (!IS_ERR(clk))
+				clk_prepare_enable(clk);
 		}
 	}
 

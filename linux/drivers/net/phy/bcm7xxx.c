@@ -15,6 +15,7 @@
 #include <linux/bitops.h>
 #include <linux/brcmphy.h>
 #include <linux/clk.h>
+#include <linux/clk-provider.h>
 #include <linux/mdio.h>
 
 /* Broadcom BCM7xxx internal PHY registers */
@@ -619,7 +620,13 @@ static int bcm7xxx_28nm_probe(struct phy_device *phydev)
 		priv->clk = NULL;
 	}
 
-	clk_prepare_enable(priv->clk);
+	/* Do not increment the clock reference count here, the MDIO driver has
+	 * already done that in order to successfully enable the PHY during its
+	 * bus->reset() callback and get us past get_phy_device() which reads
+	 * the PHY ID and later matches against a given PHY driver.
+	 */
+	if (!__clk_is_enabled(priv->clk))
+		clk_prepare_enable(priv->clk);
 
 	return 0;
 }

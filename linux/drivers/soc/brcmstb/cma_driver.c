@@ -179,8 +179,8 @@ static void __init cma_reserve_one(int region_idx)
 			&cma_data.regions[cma_data.nr_regions_valid];
 		pd->start = PFN_PHYS(tmp_cma_area->base_pfn);
 		pd->size = size;
-		/* Pre-allocate all regions */
-		pd->do_prealloc = 1;
+		/* Do not pre-allocate all regions */
+		pd->do_prealloc = 0;
 		pd->cma_area = tmp_cma_area;
 		cma_data.nr_regions_valid++;
 	}

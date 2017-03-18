@@ -578,7 +578,7 @@ static void __init relocate_dtb(void)
 	/*
 	 * See if we can move the DTB somewhere below where it is currently.
 	 */
-	for_each_free_mem_range(i, NUMA_NO_NODE, &phys_start, &phys_end, &nid) {
+	for_each_free_mem_range(i, NUMA_NO_NODE, 0, &phys_start, &phys_end, &nid) {
 		u32 dtb_size = of_get_flat_dt_size();
 		void *virt_new_dtb;
 

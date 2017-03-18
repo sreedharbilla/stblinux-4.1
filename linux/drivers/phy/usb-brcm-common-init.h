@@ -39,12 +39,20 @@ struct  brcm_usb_common_init_params {
 	void __iomem *xhci_ec_regs;
 	int ioc;
 	int ipp;
-	int has_xhci;
 	int device_mode;
 	uint32_t family_id;
 	uint32_t product_id;
+	int selected_family;
+	const uint32_t *usb_reg_bits_map;
 };
 
-void brcm_usb_common_init(struct  brcm_usb_common_init_params *params);
+void brcm_usb_set_family_map(struct brcm_usb_common_init_params *params);
+void brcm_usb_init_ipp(struct  brcm_usb_common_init_params *params);
+void brcm_usb_init_common(struct  brcm_usb_common_init_params *params);
+void brcm_usb_init_eohci(struct  brcm_usb_common_init_params *params);
+void brcm_usb_init_xhci(struct  brcm_usb_common_init_params *params);
+void brcm_usb_uninit_common(struct  brcm_usb_common_init_params *params);
+void brcm_usb_uninit_eohci(struct  brcm_usb_common_init_params *params);
+void brcm_usb_uninit_xhci(struct  brcm_usb_common_init_params *params);
 
 #endif /* _USB_BRCM_COMMON_INIT_H */

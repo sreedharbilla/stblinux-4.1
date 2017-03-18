@@ -65,6 +65,10 @@ ARCH		= $(shell cat .arch)
 
 VERSION		:= $(shell bin/linuxver.sh $(LINUXDIR))
 DOTVERSION	:= $(patsubst 26%,2.6.%,$(patsubst 3%,3.%,$(patsubst 4%,4.%,$(VERSION))))
+MAJOR_VERSION	:= $(shell echo $(VERSION) | cut -d- -f1)
+
+export MAJOR_VERSION
+
 ifeq ($(ARCH),arm64)
 LINUX_IMAGE:=Image
 else
@@ -87,6 +91,7 @@ endif
 
 .PHONY: images
 images: .target
+	$(MAKE) $(MAKEOPTS) modules
 	$(MAKE) $(MAKEOPTS) initrd_kernel
 	$(MAKE) $(MAKEOPTS) kernel
 	bin/build_rootfs_images.sh
@@ -153,6 +158,12 @@ modules:
 	# Install modules in a temporary location. They will be copied to the
 	# final location under /lib/modules/... at the rootfs build stage.
 	$(MAKE) -C $(LINUXDIR) SUBDIRS= ARCH="$(ARCH)" INSTALL_MOD_PATH=$(TEMP_MOD_DIR) modules_install
+	# Remove symlinks pointing to the build host
+	@for l in build source; do \
+		p=`find $(TEMP_MOD_DIR) -name $$l -type l`; \
+		echo "Removing $$p..."; \
+		rm -f "$$p"; \
+	done
 
 .PHONY: initrd_kernel
 initrd_kernel: .target chkpath rootfs

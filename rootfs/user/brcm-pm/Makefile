@@ -9,7 +9,7 @@ include $(ROOTDIR)/config.arch
 #     Apparently, those don't get defined when -std=c99 is being used.
 CFLAGS += -I. -L. -W -Wall -Wpedantic -Werror -std=gnu99
 
-ifeq ($(ARCH),mips)
+ifeq ($(ARCH)$(MAJOR_VERSION),mips314)
 SUFFIX:=-legacy
 endif
 

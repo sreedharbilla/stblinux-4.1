@@ -2,6 +2,10 @@
 
 set -e
 
+# We don't want to leave mounted file systems behind if we bail.
+# We run 'true' so as to not return an error code because of the umount.
+trap 'umount /mnt/flash /mnt/hd 2>/dev/null || true' SIGINT SIGTERM EXIT
+
 function tftp_err()
 {
 	if [ "$quiet" = "0" ]; then

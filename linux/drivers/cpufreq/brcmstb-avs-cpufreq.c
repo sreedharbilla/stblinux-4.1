@@ -138,6 +138,7 @@
 #define AVS_PSTATE_P3		0x3
 #define AVS_PSTATE_P4		0x4
 #define AVS_PSTATE_MAX		AVS_PSTATE_P4
+#define AVS_PSTATE_INVAL	0xff
 
 /* CPU L2 Interrupt Controller Registers */
 #define AVS_CPU_L2_SET0		0x04
@@ -182,6 +183,7 @@ struct private_data {
 	void __iomem *base;
 	void __iomem *avs_intr_base;
 	struct device *dev;
+	unsigned int pstate;
 #ifdef CONFIG_ARM_BRCMSTB_AVS_CPUFREQ_DEBUG
 	struct dentry *debugfs;
 #endif
@@ -189,6 +191,9 @@ struct private_data {
 	struct semaphore sem;
 	struct pmap pmap;
 };
+
+/* To be used by dump_cpufreq_data() only. */
+static struct cpufreq_policy *panic_pol;
 
 #ifdef CONFIG_ARM_BRCMSTB_AVS_CPUFREQ_DEBUG
 
@@ -462,10 +467,14 @@ static int brcm_avs_get_pstate(struct private_data *priv, unsigned int *pstate)
 static int brcm_avs_set_pstate(struct private_data *priv, unsigned int pstate)
 {
 	u32 args[AVS_MAX_CMD_ARGS];
+	int ret;
 
 	args[0] = pstate;
 
-	return __issue_avs_command(priv, AVS_CMD_SET_PSTATE, true, args);
+	ret = __issue_avs_command(priv, AVS_CMD_SET_PSTATE, true, args);
+	priv->pstate = ret ? AVS_PSTATE_INVAL : pstate;
+
+	return ret;
 }
 
 static unsigned long brcm_avs_get_voltage(void __iomem *base)
@@ -895,6 +904,7 @@ static int brcm_avs_cpufreq_init(struct cpufreq_policy *policy)
 	priv = platform_get_drvdata(pdev);
 	policy->driver_data = priv;
 	dev = &pdev->dev;
+	panic_pol = policy;
 
 	freq_table = brcm_avs_get_freq_table(dev, priv);
 	if (IS_ERR(freq_table)) {
@@ -919,6 +929,7 @@ static int brcm_avs_cpufreq_init(struct cpufreq_policy *policy)
 		ret = brcm_avs_get_pstate(priv, &pstate);
 		if (!ret) {
 			policy->cur = freq_table[pstate].frequency;
+			priv->pstate = pstate;
 			dev_info(dev, "registered\n");
 			return 0;
 		}
@@ -1000,6 +1011,44 @@ static struct freq_attr *brcm_avs_cpufreq_attr[] = {
 	NULL
 };
 
+/* For use from dump_cpufreq_data() only. This function is best effort. */
+static unsigned int dump_get_pstate(struct private_data *priv)
+{
+	void __iomem *base = priv->base;
+	u32 val;
+	int i;
+
+	writel(AVS_STATUS_CLEAR, base + AVS_MBOX_STATUS);
+	writel(AVS_CMD_GET_PSTATE, base + AVS_MBOX_COMMAND);
+	writel(AVS_CPU_L2_INT_MASK, priv->avs_intr_base + AVS_CPU_L2_SET0);
+
+	/* We don't have interrupts anymore, so we spin. */
+	for (i = 0; i < 100000; i++);
+
+	val = readl(base + AVS_MBOX_PARAM(0));
+
+	writel(AVS_STATUS_CLEAR, base + AVS_MBOX_STATUS);
+
+	return val;
+}
+
+static int dump_cpufreq_data(struct notifier_block *self, unsigned long unused,
+			     void *buf)
+{
+	struct private_data *priv = panic_pol->driver_data;
+	unsigned int pstate = dump_get_pstate(priv);
+
+	pr_emerg("active governor: %s\n", panic_pol->governor->name);
+	pr_emerg("P-state (stored): %u\n", priv->pstate);
+	pr_emerg("P-state (AVS): %u\n", pstate);
+
+	return 0;
+}
+
+static struct notifier_block cpufreq_notifier = {
+	.notifier_call = dump_cpufreq_data,
+};
+
 static struct cpufreq_driver brcm_avs_driver = {
 	.flags		= CPUFREQ_NEED_INITIAL_FREQ_CHECK,
 	.verify		= cpufreq_generic_frequency_table_verify,
@@ -1022,8 +1071,11 @@ static int brcm_avs_cpufreq_probe(struct platform_device *pdev)
 
 	brcm_avs_driver.driver_data = pdev;
 	ret = cpufreq_register_driver(&brcm_avs_driver);
-	if (!ret)
+	if (!ret) {
 		brcm_avs_cpufreq_debug_init(pdev);
+		atomic_notifier_chain_register(&panic_notifier_list,
+					       &cpufreq_notifier);
+	}
 
 	return ret;
 }

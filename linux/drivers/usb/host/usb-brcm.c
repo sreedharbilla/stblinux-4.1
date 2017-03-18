@@ -10,15 +10,14 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
+#include <linux/module.h>
 #include <linux/usb.h>
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/usb/hcd.h>
+#include <linux/phy/phy.h>
 
 /***********************************************************************
  * Library functions
@@ -27,17 +26,28 @@
 int brcm_usb_probe(struct platform_device *pdev,
 		const struct hc_driver *hc_driver,
 		struct usb_hcd **hcdptr,
-		struct clk **hcd_clk_ptr)
+		struct clk **hcd_clk_ptr,
+		struct phy **hcd_phy_ptr)
 {
 	struct resource *res_mem;
 	int irq;
 	struct usb_hcd *hcd;
 	struct device_node *dn = pdev->dev.of_node;
 	struct clk *usb_clk;
+	struct phy *phy;
 	int err;
 
 	if (usb_disabled())
 		return -ENODEV;
+
+	/* Get the phy */
+	phy = devm_phy_get(&pdev->dev, "usbphy");
+	if (IS_ERR(phy)) {
+		dev_err(&pdev->dev, "USB Phy not found.\n");
+		return PTR_ERR(phy);
+	}
+	phy_init(phy);
+	*hcd_phy_ptr = phy;
 
 	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res_mem) {
@@ -103,3 +113,7 @@ int brcm_usb_remove(struct platform_device *pdev, struct clk *hcd_clk)
 	return 0;
 }
 EXPORT_SYMBOL(brcm_usb_remove);
+
+MODULE_DESCRIPTION("BRCM USB Glue");
+MODULE_AUTHOR("Al Cooper");
+MODULE_LICENSE("GPL");

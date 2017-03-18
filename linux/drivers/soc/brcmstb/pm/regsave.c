@@ -56,7 +56,7 @@ struct regsave_data {
 
 static struct regsave_data priv;
 
-static int dtu_save(void)
+int dtu_save(void)
 {
 	int i;
 
@@ -73,10 +73,6 @@ static int dtu_save(void)
 
 	return 0;
 }
-
-static struct syscore_ops dtusave_pm_ops = {
-	.suspend        = dtu_save,
-};
 
 int brcmstb_dtusave_init(u32 *map_buffer, u32 *config_buffer)
 {
@@ -117,8 +113,6 @@ int brcmstb_dtusave_init(u32 *map_buffer, u32 *config_buffer)
 		priv.config_size = resource_size(&res);
 		priv.dtu_config_mem = config_buffer;
 	}
-
-	register_syscore_ops(&dtusave_pm_ops);
 
 out:
 	if (likely(dn))

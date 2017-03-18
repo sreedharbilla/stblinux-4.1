@@ -24,6 +24,7 @@
 #include <linux/usb/hcd.h>
 #include <linux/usb/ehci_pdriver.h>
 #include <linux/clk.h>
+#include <linux/phy/phy.h>
 
 #include "ehci.h"
 #include "usb-brcm.h"
@@ -32,6 +33,7 @@
 
 struct brcm_hcd {
 	struct clk *hcd_clk;
+	struct phy *hcd_phy;
 };
 
 static const char brcm_hcd_name[] = "ehci-brcm";
@@ -134,6 +136,7 @@ static int ehci_brcm_probe(struct platform_device *dev)
 	struct brcm_hcd *brcm_hcd_ptr;
 	struct clk *usb_clk;
 	struct usb_hcd *hcd;
+	struct phy *phy;
 
 	err = dma_coerce_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64));
 	if (err)
@@ -143,12 +146,13 @@ static int ehci_brcm_probe(struct platform_device *dev)
 	if (org_hub_control == NULL)
 		org_hub_control = ehci_brcm_hc_driver.hub_control;
 	ehci_brcm_hc_driver.hub_control = ehci_brcm_hub_control;
+	err = brcm_usb_probe(dev, &ehci_brcm_hc_driver, &hcd, &usb_clk, &phy);
+	if (err)
+		return err;
+	brcm_hcd_ptr = (struct brcm_hcd *)hcd_to_ehci(hcd)->priv;
+	brcm_hcd_ptr->hcd_clk = usb_clk;
+	brcm_hcd_ptr->hcd_phy = phy;
 
-	err = brcm_usb_probe(dev, &ehci_brcm_hc_driver, &hcd, &usb_clk);
-	if (!err) {
-		brcm_hcd_ptr = (struct brcm_hcd *)hcd_to_ehci(hcd)->priv;
-		brcm_hcd_ptr->hcd_clk = usb_clk;
-	}
 	return err;
 }
 
@@ -158,7 +162,9 @@ static int ehci_brcm_remove(struct platform_device *dev)
 	struct brcm_hcd *brcm_hcd_ptr =
 		(struct brcm_hcd *)hcd_to_ehci(hcd)->priv;
 
-	return brcm_usb_remove(dev, brcm_hcd_ptr->hcd_clk);
+	brcm_usb_remove(dev, brcm_hcd_ptr->hcd_clk);
+	phy_exit(brcm_hcd_ptr->hcd_phy);
+	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP

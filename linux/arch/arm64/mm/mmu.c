@@ -369,6 +369,8 @@ static void __init map_mem(void)
 
 		if (start >= end)
 			break;
+		if (memblock_is_nomap(reg))
+			continue;
 
 #ifndef CONFIG_ARM64_64K_PAGES
 		/*

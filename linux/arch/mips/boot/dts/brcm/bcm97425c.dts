@@ -1,0 +1,147 @@
+/dts-v1/;
+
+/include/ "bcm7425.dtsi"
+
+/ {
+	compatible = "brcm,bcm97425c", "brcm,bcm7425";
+	model = "Broadcom BCM97425C";
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x10000000>,
+		      <0x20000000 0x30000000>,
+		      <0x90000000 0x40000000>;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200";
+		stdout-path = &uart0;
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&enet0 {
+	status = "okay";
+};
+
+&enet1 {
+	status = "okay";
+};
+
+&moca {
+	status = "okay";
+};
+
+&ehci0 {
+	status = "okay";
+};
+
+&ohci0 {
+	status = "okay";
+};
+
+&ehci1 {
+	status = "okay";
+};
+
+&ohci1 {
+	status = "okay";
+};
+
+&sata_phy {
+	status = "okay";
+};
+
+&nand {
+	status = "okay";
+
+	nandcs@1 {
+		#size-cells = <0x2>;
+		#address-cells = <0x2>;
+		compatible = "brcm,nandcs";
+		reg = <0x1>;
+		nand-on-flash-bbt;
+
+		nand-ecc-strength = <24>;
+		nand-ecc-step-size = <1024>;
+		brcm,nand-oob-sector-size = <27>;
+
+		rootfs@0 {
+			reg = <0x0 0x0 0x0 0x0>;
+		};
+
+		kernel@1 {
+		        reg = <0x0 0x0 0x0 0x0>;
+		};
+
+		flash@0 {
+			reg = <0x0 0x0 0x1 0x0>;
+		};
+	};
+};
+
+&hif_spi {
+	status = "okay";
+
+	m25p80@0 {
+		#size-cells = <2>;
+		#address-cells = <2>;
+		compatible = "m25p80";
+		reg = <0>;
+		spi-max-frequency = <40000000>;
+		spi-cpol;
+		spi-cpha;
+		use-bspi;
+		m25p,fast-read;
+
+		rootfs@0 {
+			reg = <0x0 0x0 0x0 0x0>;
+		};
+
+		kernel@1 {
+			reg = <0x0 0x0 0x0 0x0>;
+		};
+
+		flash@0 {
+			reg = <0x0 0x0 0x1 0x0>;
+		};
+	};
+};
+
+&pcie {
+	status = "okay";
+};
+
+&sdhci1 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdio1_pins>;
+};
+
+&brcm_pmx_core {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&moca_bsc_m2_pins>;
+
+	moca_bsc_m2_pins: pinmux_moca_bsc_m2_pins {
+		pinctrl-single,bits = <
+			0x48 0x10000000 0xf0000000 /* sgpio_00 <- BSC_M2_SCL */
+			0x4c 0x00000001 0x0000000f /* sgpio_01 <- BSC_M2_SDA */
+		>;
+	};
+};
+
+&brcm_pmx_sdio1 {
+	status = "okay";
+
+	sdio1_pins: pinmux_all_pins {
+		pinctrl-single,bits = <
+			0x1c 0x80000008 0xffffffff
+			0x30 0x80010008 0xffffffff
+		>;
+	};
+};

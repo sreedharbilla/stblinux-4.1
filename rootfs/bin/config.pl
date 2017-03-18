@@ -437,6 +437,7 @@ sub gen_modifiers($$)
 		(my $mod, $suffix) = ($1, $2);
 		push(@mods, $mod);
 	}
+
 	return @mods;
 }
 
@@ -680,6 +681,14 @@ sub cmd_defaults($)
 		$vendor{"CONFIG_USER_I2C_TOOLS"} = "y";
 	}
 
+	# Enable netfilter by default for ARM/ARM64 based chips (e.g:
+	# connection offload)
+	if ($chip eq "arm" or $chip eq "arm64") {
+		$linux{"CONFIG_NETFILTER"} = "y";
+		$linux{"CONFIG_BRIDGE_NETFILTER"} = "n";
+
+	}
+
 	my (%vendor_w, %busybox_w, %linux_o, %vendor_o, %busybox_o);
 
 	foreach (@mods) {
@@ -839,6 +848,9 @@ sub cmd_defaults($)
 			$vendor{"CONFIG_USER_MOCA_NONE"} = "y";
 			$vendor{"CONFIG_USER_MOCA_MOCA1"} = "n";
 			$vendor{"CONFIG_USER_MOCA_MOCA2"} = "n";
+		} elsif($mod eq "nonetfilter") {
+			$linux{"CONFIG_NETFILTER"} = "n";
+			$vendor{"CONFIG_USER_IPTABLES_IPTABLES"} = "n";
 		} elsif($mod eq "lttng") {
 
 			# Enable LTTng

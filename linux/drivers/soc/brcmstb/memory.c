@@ -772,10 +772,11 @@ void *brcmstb_memory_kva_map_phys(phys_addr_t phys, size_t size, bool cached)
 		return NULL;
 	}
 
-	if (pfn_valid(pfn)) {
-		addr = brcmstb_memory_kva_map(pfn_to_page(pfn),
-				size / PAGE_SIZE, PAGE_KERNEL);
-	}
+	if (!pfn_valid(pfn))
+		addr = ioremap_cache(phys, size);
+	else
+		addr = brcmstb_memory_kva_map(pfn_to_page(pfn), size / PAGE_SIZE,
+					      PAGE_KERNEL);
 	return addr;
 }
 EXPORT_SYMBOL(brcmstb_memory_kva_map_phys);
@@ -798,7 +799,10 @@ int brcmstb_memory_kva_unmap(const void *kva)
 		return 0;
 	}
 
-	vunmap(kva);
+	if (pfn_valid(virt_to_pfn(kva)))
+		vunmap(kva);
+	else
+		iounmap((void *)kva);
 
 	return 0;
 }
