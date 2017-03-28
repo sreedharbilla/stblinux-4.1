@@ -302,7 +302,7 @@ int __init brcmstb_memory_get_default_reserve(int bank_nr,
 		PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order);
 	phys_addr_t start, end;
 	phys_addr_t size, adj = 0;
-	phys_addr_t newstart, newsize;
+	phys_addr_t newstart, newsize, limit;
 	const void *fdt = initial_boot_params;
 	int mem_offset;
 	const struct fdt_property *prop;
@@ -372,7 +372,16 @@ int __init brcmstb_memory_get_default_reserve(int bank_nr,
 	end = start + size;
 
 	if (bank_nr == 0) {
-		if (end <= memblock_get_current_limit() &&
+		limit = memblock_get_current_limit();
+		/* On ARM64 systems, force the first memory controller to be
+		 * partitioned the same way it would on ARM (32-bit) by
+		 * giving 256MB to the kernel, the rest to BMEM
+		 */
+#ifdef CONFIG_ARM64
+		if (limit > start + SZ_256M)
+			limit = start + SZ_256M;
+#endif
+		if (end <= limit &&
 		    end == memblock_end_of_DRAM()) {
 			if (size < SZ_32M) {
 				pr_err("low memory too small for default bmem\n");
@@ -391,8 +400,8 @@ int __init brcmstb_memory_get_default_reserve(int bank_nr,
 			do_div(tmp, 100);
 			size = tmp;
 			start = end - size;
-		} else if(end > memblock_get_current_limit()) {
-			start = memblock_get_current_limit();
+		} else if(end > limit) {
+			start = limit;
 			size = end - start;
 		} else {
 			if (size >= SZ_1G)

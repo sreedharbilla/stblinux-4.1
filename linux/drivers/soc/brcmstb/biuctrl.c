@@ -59,7 +59,7 @@ static const int b15_cpubiuctrl_regs[] = {
 	[CPU_WRITEBACK_CTRL_REG] = -1,
 };
 
-/* Odd cases, e.g: 7260 */
+/* Odd cases, e.g: 7260/7268/7271A0 */
 static const int b53_cpubiuctrl_no_wb_regs[] = {
 	[CPU_CREDIT_REG] = 0x0b0,
 	[CPU_MCP_FLOW_REG] = 0x0b4,
@@ -182,7 +182,9 @@ static void __init setup_hifcpubiuctrl_regs(void)
 		pr_err("unsupported CPU\n");
 	of_node_put(cpu_dn);
 
-	if (of_machine_is_compatible("brcm,bcm7260a0"))
+	if (of_machine_is_compatible("brcm,bcm7260a0") ||
+	    of_machine_is_compatible("brcm,bcm7268a0") ||
+	    of_machine_is_compatible("brcm,bcm7271a0"))
 		cpubiuctrl_regs = b53_cpubiuctrl_no_wb_regs;
 }
 
