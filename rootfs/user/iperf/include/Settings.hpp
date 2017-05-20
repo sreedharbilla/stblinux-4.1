@@ -69,6 +69,9 @@
 extern "C" {
 #endif
 
+/* Smallest report interval supported. Units is seconds */
+#define SMALLEST_INTERVAL 0.005
+
 // server/client mode
 typedef enum ThreadMode {
     kMode_Unknown = 0,
@@ -93,6 +96,12 @@ typedef enum TestMode {
     kTest_TradeOff,
     kTest_Unknown
 } TestMode;
+
+// rate request units
+typedef enum RateUnits {
+    kRate_BW = 0,
+    kRate_PPS
+} RateUnits;
 
 #include "Reporter.h"
 /*
@@ -154,12 +163,14 @@ typedef struct thread_Settings {
     TestMode mMode;                 // -r or -d
     // Hopefully int64_t's
     max_size_t mUDPRate;            // -b or -u
+    RateUnits mUDPRateUnits;        // -b is either bw or pps
     max_size_t mAmount;             // -n or -t
     // doubles
     double mInterval;               // -i
     // shorts
     unsigned short mListenPort;     // -L
     unsigned short mPort;           // -p
+    unsigned short mBindPort;      // -B 
     // chars
     char   mFormat;                 // -f
     int mTTL;                    // -T
@@ -210,6 +221,10 @@ typedef struct thread_Settings {
 #define FLAG_SINGLECLIENT   0x00100000
 #define FLAG_SINGLEUDP      0x00200000
 #define FLAG_CONGESTION     0x00400000
+#define FLAG_REALTIME       0x00800000
+#define FLAG_BWSET          0x01000000
+#define FLAG_ENHANCEDREPORT 0x02000000
+#define FLAG_SERVERMODETIME 0x04000000
 
 #define isBuflenSet(settings)      ((settings->flags & FLAG_BUFLENSET) != 0)
 #define isCompat(settings)         ((settings->flags & FLAG_COMPAT) != 0)
@@ -236,6 +251,10 @@ typedef struct thread_Settings {
 #define isSingleClient(settings)   ((settings->flags & FLAG_SINGLECLIENT) != 0)
 #define isSingleUDP(settings)      ((settings->flags & FLAG_SINGLEUDP) != 0)
 #define isCongestionControl(settings) ((settings->flags & FLAG_CONGESTION) != 0)
+#define isRealtime(settings)       ((settings->flags & FLAG_REALTIME) != 0)
+#define isBWSet(settings)          ((settings->flags & FLAG_BWSET) != 0)
+#define isEnhanced(settings)    ((settings->flags & FLAG_ENHANCEDREPORT) != 0)
+#define isServerModeTime(settings)    ((settings->flags & FLAG_SERVERMODETIME) != 0)
 
 #define setBuflenSet(settings)     settings->flags |= FLAG_BUFLENSET
 #define setCompat(settings)        settings->flags |= FLAG_COMPAT
@@ -260,6 +279,10 @@ typedef struct thread_Settings {
 #define setSingleClient(settings)  settings->flags |= FLAG_SINGLECLIENT
 #define setSingleUDP(settings)     settings->flags |= FLAG_SINGLEUDP
 #define setCongestionControl(settings) settings->flags |= FLAG_CONGESTION
+#define setRealtime(settings)      settings->flags |= FLAG_REALTIME
+#define setBWSet(settings)         settings->flags |= FLAG_BWSET
+#define setEnhanced(settings)      settings->flags |= FLAG_ENHANCEDREPORT
+#define setServerModeTime(settings)      settings->flags |= FLAG_SERVERMODETIME
 
 #define unsetBuflenSet(settings)   settings->flags &= ~FLAG_BUFLENSET
 #define unsetCompat(settings)      settings->flags &= ~FLAG_COMPAT
@@ -284,10 +307,15 @@ typedef struct thread_Settings {
 #define unsetSingleClient(settings)   settings->flags &= ~FLAG_SINGLECLIENT
 #define unsetSingleUDP(settings)      settings->flags &= ~FLAG_SINGLEUDP
 #define unsetCongestionControl(settings) settings->flags &= ~FLAG_CONGESTION
+#define unsetRealtime(settings)    settings->flags &= ~FLAG_REALTIME
+#define unsetBWSet(settings)       settings->flags &= ~FLAG_BWSET
+#define unsetEnhanced(settings)    settings->flags &= ~FLAG_ENHANCEDREPORT
+#define unsetServerModeTime(settings)    settings->flags &= ~FLAG_SERVERMODETIME
 
 
 #define HEADER_VERSION1 0x80000000
 #define RUN_NOW         0x00000001
+#define UNITS_PPS       0x00000002
 
 // used to reference the 4 byte ID number we place in UDP datagrams
 // use int32_t if possible, otherwise a 32 bit bitfield (e.g. on J90) 
@@ -330,15 +358,21 @@ typedef struct client_hdr {
     int32_t numThreads;
     int32_t mPort;
     int32_t bufferlen;
-    int32_t mWinBand;
+    int32_t mWindowSize;
     int32_t mAmount;
+    int32_t mRate;
+    int32_t mUDPRateUnits;
+    int32_t mRealtime;
 #else
     signed int flags      : 32;
     signed int numThreads : 32;
     signed int mPort      : 32;
     signed int bufferlen  : 32;
-    signed int mWinBand   : 32;
+    signed int mWindowSize : 32;
     signed int mAmount    : 32;
+    signed int mRate      : 32;
+    signed int mUDPRateUnits : 32;
+    signed int mRealtime  : 32;
 #endif
 } client_hdr;
 
@@ -371,6 +405,21 @@ typedef struct server_hdr {
     int32_t datagrams;
     int32_t jitter1;
     int32_t jitter2;
+    int32_t minTransit1;
+    int32_t minTransit2;
+    int32_t maxTransit1;
+    int32_t maxTransit2;
+    int32_t sumTransit1;
+    int32_t sumTransit2;
+    int32_t meanTransit1;
+    int32_t meanTransit2;
+    int32_t m2Transit1;
+    int32_t m2Transit2;
+    int32_t vdTransit1;
+    int32_t vdTransit2;
+    int32_t cntTransit;
+    int32_t IPGcnt;
+    int32_t IPGsum;
 #else
     signed int flags        : 32;
     signed int total_len1   : 32;
@@ -382,6 +431,21 @@ typedef struct server_hdr {
     signed int datagrams    : 32;
     signed int jitter1      : 32;
     signed int jitter2      : 32;
+    signed int minTransit1  : 32;
+    signed int minTransit2  : 32;
+    signed int maxTransit1  : 32;
+    signed int maxTransit2  : 32;
+    signed int sumTransit1  : 32;
+    signed int sumTransit2  : 32;
+    signed int meanTransit1  : 32;
+    signed int meanTransit2  : 32;
+    signed int m2Transit1  : 32;
+    signed int m2Transit2  : 32;
+    signed int vdTransit1  : 32;
+    signed int vdTransit2  : 32;
+    signed int cntTransit   : 32;
+    signed int IPGcnt       : 32;
+    signed int IPGsum       : 32;
 #endif
 
 } server_hdr;

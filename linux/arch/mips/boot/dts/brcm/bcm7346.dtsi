@@ -145,80 +145,128 @@
 			};
 		};
 
+		usbphy_0: usb-phy@480200 {
+			reg = <0x480200 0x100>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "brcm,usb-phy";
+			status = "disabled";
+			brcm,ioc = <1>;
+			brcm,ipp = <1>;
+			#phy-cells = <1>;
+			ranges;
+		};
+
 		ehci0: usb@480300 {
-			compatible = "brcm,bcm7346-ehci", "generic-ehci";
+			compatible = "brcm,bcm7346-ehci",
+				   "brcm,ehci-brcm-v2", "generic-ehci";
 			reg = <0x480300 0x100>;
 			native-endian;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <68>;
 			status = "disabled";
+			phys = <&usbphy_0 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ohci0: usb@480400 {
-			compatible = "brcm,bcm7346-ohci", "generic-ohci";
+			compatible = "brcm,bcm7346-ohci",
+				   "brcm,ohci-brcm-v2", "generic-ohci";
 			reg = <0x480400 0x100>;
 			native-endian;
 			no-big-frame-no;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <70>;
 			status = "disabled";
+			phys = <&usbphy_0 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ehci1: usb@480500 {
-			compatible = "brcm,bcm7346-ehci", "generic-ehci";
+			compatible = "brcm,bcm7346-ehci",
+				   "brcm,ehci-brcm-v2", "generic-ehci";
 			reg = <0x480500 0x100>;
 			native-endian;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <69>;
 			status = "disabled";
+			phys = <&usbphy_0 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ohci1: usb@480600 {
-			compatible = "brcm,bcm7346-ohci", "generic-ohci";
+			compatible = "brcm,bcm7346-ohci",
+				   "brcm,ohci-brcm-v2", "generic-ohci";
 			reg = <0x480600 0x100>;
 			native-endian;
 			no-big-frame-no;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <71>;
 			status = "disabled";
+			phys = <&usbphy_0 0x0>;
+			phy-names = "usbphy";
+		};
+
+		usbphy_1: usb-phy@490200 {
+			reg = <0x490200 0x100>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "brcm,usb-phy";
+			status = "disabled";
+			brcm,ioc = <1>;
+			brcm,ipp = <1>;
+			#phy-cells = <1>;
+			ranges;
 		};
 
 		ehci2: usb@490300 {
-			compatible = "brcm,bcm7346-ehci", "generic-ehci";
+			compatible = "brcm,bcm7346-ehci",
+				   "brcm,ehci-brcm-v2", "generic-ehci";
 			reg = <0x490300 0x100>;
 			native-endian;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <73>;
 			status = "disabled";
+			phys = <&usbphy_1 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ohci2: usb@490400 {
-			compatible = "brcm,bcm7346-ohci", "generic-ohci";
+			compatible = "brcm,bcm7346-ohci",
+				   "brcm,ohci-brcm-v2", "generic-ohci";
 			reg = <0x490400 0x100>;
 			native-endian;
 			no-big-frame-no;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <75>;
 			status = "disabled";
+			phys = <&usbphy_1 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ehci3: usb@490500 {
-			compatible = "brcm,bcm7346-ehci", "generic-ehci";
+			compatible = "brcm,bcm7346-ehci",
+				   "brcm,ehci-brcm-v2", "generic-ehci";
 			reg = <0x490500 0x100>;
 			native-endian;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <74>;
 			status = "disabled";
+			phys = <&usbphy_1 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ohci3: usb@490600 {
-			compatible = "brcm,bcm7346-ohci", "generic-ohci";
+			compatible = "brcm,bcm7346-ohci",
+				   "brcm,ohci-brcm-v2", "generic-ohci";
 			reg = <0x490600 0x100>;
 			native-endian;
 			no-big-frame-no;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <76>;
 			status = "disabled";
+			phys = <&usbphy_1 0x0>;
+			phy-names = "usbphy";
 		};
 
 		sata: sata@181000 {

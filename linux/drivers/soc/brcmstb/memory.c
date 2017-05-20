@@ -1,5 +1,5 @@
 /*
- * Copyright © 2015-2016 Broadcom
+ * Copyright © 2015-2017 Broadcom
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -23,6 +23,7 @@
 #include <linux/mm.h>   /* for high_memory */
 #include <linux/of_address.h>
 #include <linux/of_fdt.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/vme.h>
@@ -73,10 +74,7 @@ enum {
 const enum brcmstb_reserve_type brcmstb_default_reserve = BRCMSTB_RESERVE_BMEM;
 bool brcmstb_memory_override_defaults = false;
 
-static struct {
-	struct brcmstb_range range[MAX_BRCMSTB_RESERVED_RANGE];
-	int count;
-} reserved_init;
+static struct brcmstb_reserved_memory reserved_init;
 
 /* -------------------- Functions -------------------- */
 
@@ -85,25 +83,14 @@ static struct {
  * physical address.
  */
 #ifdef CONFIG_ARCH_BRCMSTB
-int brcmstb_memory_phys_addr_to_memc(phys_addr_t pa)
+int __brcmstb_memory_phys_addr_to_memc(phys_addr_t pa, void __iomem *base)
 {
 	int memc = -1;
 	int i;
-	struct device_node *np;
-	void __iomem *cpubiuctrl = NULL;
-	void __iomem *curr;
 
-	np = of_find_compatible_node(NULL, NULL, "brcm,brcmstb-cpu-biu-ctrl");
-	if (!np)
-		goto cleanup;
-
-	cpubiuctrl = of_iomap(np, 0);
-	if (!cpubiuctrl)
-		goto cleanup;
-
-	for (i = 0, curr = cpubiuctrl; i < NUM_BUS_RANGES; i++, curr += 8) {
-		const u64 ulimit_raw = readl(curr);
-		const u64 llimit_raw = readl(curr + 4);
+	for (i = 0; i < NUM_BUS_RANGES; i++, base += 8) {
+		const u64 ulimit_raw = readl(base);
+		const u64 llimit_raw = readl(base + 4);
 		const u64 ulimit =
 			((ulimit_raw >> BUS_RANGE_ULIMIT_SHIFT)
 			 << BUS_RANGE_PA_SHIFT) | 0xfff;
@@ -119,15 +106,66 @@ int brcmstb_memory_phys_addr_to_memc(phys_addr_t pa)
 		}
 	}
 
-cleanup:
-	if (cpubiuctrl)
-		iounmap(cpubiuctrl);
+	return memc;
+}
 
+int brcmstb_memory_phys_addr_to_memc(phys_addr_t pa)
+{
+	int memc = -1;
+	struct device_node *np;
+	void __iomem *cpubiuctrl;
+
+	np = of_find_compatible_node(NULL, NULL, "brcm,brcmstb-cpu-biu-ctrl");
+	if (!np)
+		return memc;
+
+	cpubiuctrl = of_iomap(np, 0);
+	if (!cpubiuctrl)
+		goto cleanup;
+
+	memc = __brcmstb_memory_phys_addr_to_memc(pa, cpubiuctrl);
+	iounmap(cpubiuctrl);
+
+cleanup:
 	of_node_put(np);
 
 	return memc;
 }
+
+static int __init early_phys_addr_to_memc(phys_addr_t pa)
+{
+	int memc = -1;
+	void __iomem *cpubiuctrl;
+	resource_size_t start;
+	const void *fdt = initial_boot_params;
+	int offset, proplen, cpubiuctrl_size;
+	const struct fdt_property *prop;
+
+	if (!fdt)
+		return memc;
+
+	offset = fdt_node_offset_by_compatible(fdt, -1,
+					       "brcm,brcmstb-cpu-biu-ctrl");
+	if (offset < 0)
+		return memc;
+
+	prop = fdt_get_property(fdt, offset, "reg", &proplen);
+	if (proplen != (2 * sizeof(u32)))
+		return memc;
+
+	start = (resource_size_t)DT_PROP_DATA_TO_U32(prop->data, 0);
+	cpubiuctrl_size = DT_PROP_DATA_TO_U32(prop->data, sizeof(u32));
+	cpubiuctrl = early_ioremap(start, cpubiuctrl_size);
+	if (!cpubiuctrl)
+		return memc;
+
+	memc = __brcmstb_memory_phys_addr_to_memc(pa, cpubiuctrl);
+	early_iounmap(cpubiuctrl, cpubiuctrl_size);
+
+	return memc;
+}
 #elif defined(CONFIG_MIPS)
+#define early_phys_addr_to_memc brcmstb_memory_phys_addr_to_memc
 int brcmstb_memory_phys_addr_to_memc(phys_addr_t pa)
 {
 	/* The logic here is fairly simple and hardcoded: if pa <= 0x5000_0000,
@@ -142,6 +180,70 @@ int brcmstb_memory_phys_addr_to_memc(phys_addr_t pa)
 		return 0;
 }
 #endif
+EXPORT_SYMBOL(brcmstb_memory_phys_addr_to_memc);
+
+u64 brcmstb_memory_memc_size(int memc)
+{
+	const void *fdt = initial_boot_params;
+	const int mem_offset = fdt_path_offset(fdt, "/memory");
+	int addr_cells = 1, size_cells = 1;
+	const struct fdt_property *prop;
+	int proplen, cellslen;
+	u64 memc_size = 0;
+	int i;
+
+	/* Get root size and address cells if specified */
+	prop = fdt_get_property(fdt, 0, "#size-cells", &proplen);
+	if (prop)
+		size_cells = DT_PROP_DATA_TO_U32(prop->data, 0);
+
+	prop = fdt_get_property(fdt, 0, "#address-cells", &proplen);
+	if (prop)
+		addr_cells = DT_PROP_DATA_TO_U32(prop->data, 0);
+
+	if (mem_offset < 0)
+		return -1;
+
+	prop = fdt_get_property(fdt, mem_offset, "reg", &proplen);
+	cellslen = (int)sizeof(u32) * (addr_cells + size_cells);
+	if ((proplen % cellslen) != 0)
+		return -1;
+
+	for (i = 0; i < proplen / cellslen; ++i) {
+		u64 addr = 0;
+		u64 size = 0;
+		int memc_idx;
+		int j;
+
+		for (j = 0; j < addr_cells; ++j) {
+			int offset = (cellslen * i) + (sizeof(u32) * j);
+
+			addr |= (u64)DT_PROP_DATA_TO_U32(prop->data, offset) <<
+				((addr_cells - j - 1) * 32);
+		}
+		for (j = 0; j < size_cells; ++j) {
+			int offset = (cellslen * i) +
+				(sizeof(u32) * (j + addr_cells));
+
+			size |= (u64)DT_PROP_DATA_TO_U32(prop->data, offset) <<
+				((size_cells - j - 1) * 32);
+		}
+
+		if ((phys_addr_t)addr != addr) {
+			pr_err("phys_addr_t is smaller than provided address 0x%llx!\n",
+					addr);
+			return -1;
+		}
+
+		memc_idx = brcmstb_memory_phys_addr_to_memc((phys_addr_t)addr);
+		if (memc_idx == memc)
+			memc_size += size;
+	}
+
+	return memc_size;
+
+}
+EXPORT_SYMBOL(brcmstb_memory_memc_size);
 
 static int populate_memc(struct brcmstb_memory *mem, int addr_cells,
 		int size_cells)
@@ -273,47 +375,358 @@ static int populate_cma(struct brcmstb_memory *mem)
 #endif
 }
 
-static int populate_reserved(struct brcmstb_memory *mem)
+#ifndef CONFIG_HAVE_MEMBLOCK
+static inline int populate_reserved(struct brcmstb_memory *mem)
 {
-#ifdef CONFIG_HAVE_MEMBLOCK
-	memcpy(&mem->reserved, &reserved_init, sizeof(reserved_init));
-	return 0;
-#else
 	return -ENOSYS;
-#endif
+}
+#else
+static inline bool address_within_range(phys_addr_t addr, phys_addr_t size,
+				      struct brcmstb_range *range)
+{
+	return (addr >= range->addr &&
+		addr + size <= range->addr + range->size);
+}
+
+static inline bool rmem_within_range(struct reserved_mem *rmem,
+				     struct brcmstb_range *range)
+{
+	if (!rmem || !rmem->size)
+		return false;
+
+	return address_within_range(rmem->base, rmem->size, range);
+}
+
+static int range_exists(phys_addr_t addr, phys_addr_t size,
+			struct brcmstb_reserved_memory *reserved)
+{
+	struct brcmstb_range *range;
+	unsigned int i;
+
+	/* Don't consider 0 size ranges as valid */
+	if (!size)
+		return reserved->count;
+
+	for (i = 0; i < reserved->count; i++) {
+		range = &reserved->range[i];
+		if (range->addr == addr)
+			return i;
+	}
+
+	return -1;
+}
+
+static void range_truncate(phys_addr_t addr, phys_addr_t *size)
+{
+	struct brcmstb_range range = {
+		.addr = addr,
+		.size = *size,
+	};
+	int count = __reserved_mem_get_count();
+	struct reserved_mem *rmem;
+	int i;
+
+	/* Check if we have an neighboring rmem entry, and if so, adjust
+	 * the range by how much
+	 */
+	for (i = 0; i < count; i++) {
+		rmem = __reserved_mem_get_entry(i);
+		if (rmem_within_range(rmem, &range) && rmem->reserved_name)
+			*size -= rmem->size;
+	}
 }
 
 /*
- * brcmstb_memory_get_default_reserve() - find default reservation for given ID
- * @bank_nr: bank index
- * @pstart: pointer to the start address (output)
- * @psize: pointer to the size address (output)
+ * Attempts the insertion of a given reserved memory entry (rmem) into
+ * a larger range using reserved as a database entry
  *
- * NOTE: This interface will change in future kernels that do not have meminfo
- *
- * This takes in the bank number and determines the size and address of the
- * default region reserved for refsw within the bank.
+ * return values:
+ * true if the entry was successfully inserted (could have been more than just one)
+ * false if the entry was not inserted (not a valid candidate)
  */
-int __init brcmstb_memory_get_default_reserve(int bank_nr,
-		phys_addr_t *pstart, phys_addr_t *psize)
+static bool rmem_insert_into_range(struct reserved_mem *rmem,
+				   struct brcmstb_range *range,
+				   struct brcmstb_reserved_memory *reserved)
+{
+	int len = MAX_BRCMSTB_RESERVED_NAME;
+	phys_addr_t size1 = 0, size2 = 0;
+	int i = reserved->count;
+	int j;
+
+	if (!rmem->size)
+		return false;
+
+	/* This region does not have a name, it must be part of its larger
+	 * range then.
+	 */
+	if (!rmem->reserved_name)
+		return false;
+
+	/* If we have memory below us, we should report it but we also need to
+	 * make sure we are not reporting an existing range.
+	 */
+	if (range) {
+		/* Get the memory below */
+		size1 = rmem->base - range->addr;
+		if (range_exists(range->addr, size1, reserved) < 0) {
+			reserved->range[i].addr = range->addr;
+			reserved->range[i].size = size1;
+			reserved->count++;
+			i = reserved->count;
+		}
+	}
+
+	/* We may have already inserted this rmem entry before, but
+	 * without its name, so find it, and update the location
+	 */
+	j = range_exists(rmem->base, rmem->size, reserved);
+	if (j >= 0 && range)
+		i = j;
+
+	strncpy(reserved->range_name[i].name, rmem->reserved_name, len);
+	reserved->range[i].addr = rmem->base;
+	reserved->range[i].size = rmem->size;
+	/* Only increment if this was not an existing location we re-used */
+	if (i != j)
+		reserved->count++;
+	i = reserved->count;
+
+	/* If we have memory above us, we should also report it but
+	 * we also need to make sure we are not reporting an existing
+	 * range either
+	 */
+	if (range) {
+		size2 = (range->addr + range->size) - (rmem->base + rmem->size);
+		size1 = rmem->base + rmem->size;
+		if (range_exists(rmem->base + rmem->size, size2, reserved) < 0) {
+			range_truncate(size1, &size2);
+			reserved->range[i].addr = size1;
+			reserved->range[i].size = size2;
+			reserved->count++;
+		}
+	}
+
+	return true;
+}
+
+static bool contiguous_range_exists(struct brcmstb_range *range,
+				    struct brcmstb_reserved_memory *reserved)
+{
+	struct brcmstb_range *iter;
+	phys_addr_t total_size = 0;
+	unsigned int i;
+
+	for (i = 0; i < reserved->count; i++) {
+		iter = &reserved->range[i];
+		if (address_within_range(iter->addr, iter->size, range))
+			total_size += iter->size;
+	}
+
+	return total_size == range->size;
+}
+
+static int populate_reserved(struct brcmstb_memory *mem)
+{
+	struct brcmstb_reserved_memory reserved;
+	struct brcmstb_range *range;
+	struct reserved_mem *rmem;
+	int count, i, j;
+	bool added;
+
+	memset(&reserved, 0, sizeof(reserved));
+
+	count = __reserved_mem_get_count();
+
+	/* No reserved-memory entries, or OF_RESERVED_MEM not built, just
+	 * report what we already have */
+	if (count <= 0) {
+		memcpy(&mem->reserved, &reserved_init, sizeof(reserved_init));
+		return 0;
+	}
+
+	count = min(count, MAX_BRCMSTB_RESERVED_RANGE);
+
+	/* Loop through the FDT reserved memory regions, first pass
+	 * will split the existing reserved ranges into smaller
+	 * name-based reserved regions
+	 */
+	for (i = 0; i < reserved_init.count; i++) {
+		range = &reserved_init.range[i];
+		added = false;
+		for (j = 0; j < count; j++) {
+			added = false;
+			rmem = __reserved_mem_get_entry(j);
+			if (rmem_within_range(rmem, range))
+				added = rmem_insert_into_range(rmem, range,
+							       &reserved);
+		}
+
+		/* rmem_insert_into_range() may be splitting a larger range into
+		 * contiguous parts, so we need to check that here too to avoid
+		 * re-inserting it another time
+		 */
+		if (!added && range->size &&
+		    !contiguous_range_exists(range, &reserved)) {
+			reserved.range[reserved.count].addr = range->addr;
+			reserved.range[reserved.count].size = range->size;
+			reserved.count++;
+		}
+	}
+
+	/* Second loop takes care of "no-map" regions which do not show up
+	 * in reserved_init and need to be checked separately
+	 */
+	for (i = 0; i < count; i++) {
+		rmem = __reserved_mem_get_entry(i);
+		if (!memblock_is_map_memory(rmem->base))
+			rmem_insert_into_range(rmem, NULL, &reserved);
+	}
+
+	memcpy(&mem->reserved, &reserved, sizeof(reserved));
+
+	return 0;
+}
+#endif
+
+/*
+ * brcmstb_memory_set_range() - validate and set middleware memory range
+ * @start: the physical address of the start of a candidate range
+ * @end: the physical address one beyond the end of a candidate range
+ * @setup: function for setting the start and size of a region
+ *
+ * This function adjusts a candidate default memory range to accommodate
+ * memory reservations and alignment constraints.  If a valid range can
+ * be determined, then the setup function is called to actually record
+ * the region.
+ *
+ * This function assumes the memblock.reserved type is incrementally
+ * ordered and non-overlapping.  If that changes then this function must
+ * be updated.
+ */
+static int __init brcmstb_memory_set_range(phys_addr_t start, phys_addr_t end,
+					   int (*setup)(phys_addr_t start,
+							phys_addr_t size))
 {
 	/* min alignment for mm core */
 	const phys_addr_t alignment =
 		PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order);
-	phys_addr_t start, end;
-	phys_addr_t size, adj = 0;
-	phys_addr_t newstart, newsize, limit;
+	phys_addr_t temp, size = end - start;
+	int i;
+
+	for (i = 0; i < memblock.reserved.cnt; i++) {
+		struct memblock_region *region = &memblock.reserved.regions[i];
+
+		/* range is entirely below the reserved region */
+		if (end <= region->base)
+			break;
+
+		/* range is entirely above the reserved region */
+		if (start >= region->base + region->size)
+			continue;
+
+		if (start < region->base) {
+			if (end <= region->base + region->size) {
+				/* end of range overlaps reservation */
+				pr_debug("%s: Reduced default region %pa@%pa\n",
+						__func__, &size, &start);
+
+				end = region->base;
+				size = end - start;
+				pr_debug("%s: to %pa@%pa\n",
+						__func__, &size, &start);
+				break;
+			}
+
+			/* range contains the reserved region */
+			pr_debug("%s: Split default region %pa@%pa\n",
+				 __func__, &size, &start);
+
+			size = region->base - start;
+			pr_debug("%s: into %pa@%pa\n",
+				 __func__, &size, &start);
+			brcmstb_memory_set_range(start, region->base, setup);
+
+			start = region->base + region->size;
+			size = end - start;
+			pr_debug("%s: and %pa@%pa\n", __func__, &size, &start);
+		} else if (end > region->base + region->size) {
+			/* start of range overlaps reservation */
+			pr_debug("%s: Reduced default region %pa@%pa\n",
+				 __func__, &size, &start);
+			start = region->base + region->size;
+			size = end - start;
+			pr_debug("%s: to %pa@%pa\n", __func__, &size, &start);
+		} else {
+			/* range is contained by the reserved region */
+			pr_debug("%s: Default region %pa@%pa is reserved\n",
+				 __func__, &size, &start);
+
+			return -EINVAL;
+		}
+	}
+
+	/* Exclude reserved-memory 'no-map' entries from being possible
+	 * candidates
+	 */
+	if (!memblock_is_map_memory(start)) {
+		pr_debug("%s: Cannot add nomap %pa%p@\n",
+			 __func__, &start, &end);
+		return -EINVAL;
+	}
+
+	/* Fix up alignment */
+	temp = ALIGN(start, alignment);
+	if (temp != start) {
+		pr_debug("adjusting start from %pa to %pa\n",
+			 &start, &temp);
+
+		if (size > (temp - start))
+			size -= (temp - start);
+		else
+			size = 0;
+
+		start = temp;
+	}
+
+	temp = round_down(size, alignment);
+	if (temp != size) {
+		pr_debug("adjusting size from %pa to %pa\n",
+			 &size, &temp);
+		size = temp;
+	}
+
+	if (size == 0) {
+		pr_debug("size available in bank was 0 - skipping\n");
+		return -EINVAL;
+	}
+
+	return setup(start, size);
+}
+
+/*
+ * brcmstb_memory_default_reserve() - create default reservations
+ * @setup: function for setting the start and size of a region
+ *
+ * This determines the size and address of the default regions
+ * reserved for refsw based on the flattened device tree.
+ */
+void __init brcmstb_memory_default_reserve(int (*setup)(phys_addr_t start,
+							phys_addr_t size))
+{
+	phys_addr_t start, end, size, limit;
+	phys_addr_t adj = 0;
 	const void *fdt = initial_boot_params;
-	int mem_offset;
+	int offset;
 	const struct fdt_property *prop;
 	int addr_cells = 1, size_cells = 1;
 	int proplen, cellslen;
 	int i;
 	u64 tmp;
+	int prev_memc = 0;
 
 	if (!fdt) {
 		pr_err("No device tree?\n");
-		return -ENOMEM;
+		return;
 	}
 
 	/* Get root size and address cells if specified */
@@ -327,170 +740,112 @@ int __init brcmstb_memory_get_default_reserve(int bank_nr,
 		addr_cells = DT_PROP_DATA_TO_U32(prop->data, 0);
 	pr_debug("address_cells = %x\n", addr_cells);
 
-	mem_offset = fdt_path_offset(fdt, "/memory");
+	offset = fdt_path_offset(fdt, "/memory");
 
-	if (mem_offset < 0) {
+	if (offset < 0) {
 		pr_err("No memory node?\n");
-		return -ENOMEM;
+		return;
 	}
 
-	prop = fdt_get_property(fdt, mem_offset, "reg", &proplen);
+	prop = fdt_get_property(fdt, offset, "reg", &proplen);
 	cellslen = (int)sizeof(u32) * (addr_cells + size_cells);
 	if ((proplen % cellslen) != 0) {
 		pr_err("Invalid length of reg prop: %d\n", proplen);
-		return -ENOMEM;
+		return;
 	}
 
-	if (bank_nr >= proplen / cellslen)
-		return -ENOMEM;
+	offset = 0;
+	while (offset < proplen) {
+		tmp = 0;
+		for (i = 0; i < addr_cells; ++i) {
+			tmp |= (u64)DT_PROP_DATA_TO_U32(prop->data, offset) <<
+			       ((addr_cells - i - 1) * 32);
+			offset += sizeof(u32);
+		}
+		start = (phys_addr_t)tmp;
+		if (start != tmp) {
+			pr_err("phys_addr_t too small for address 0x%llx!\n",
+			       tmp);
+			offset += sizeof(u32) * size_cells;
+			continue;
+		}
 
-	if (!pstart || !psize)
-		return -EFAULT;
+		tmp = 0;
+		for (i = 0; i < size_cells; ++i) {
+			tmp |= (u64)DT_PROP_DATA_TO_U32(prop->data, offset) <<
+			       ((size_cells - i - 1) * 32);
+			offset += sizeof(u32);
+		}
+		size = (phys_addr_t)tmp;
+		if (size != tmp) {
+			pr_err("phys_addr_t too small for size 0x%llx!\n",
+			       tmp);
+			continue;
+		}
 
-	tmp = 0;
-	for (i = 0; i < addr_cells; ++i) {
-		int offset = (cellslen * bank_nr) + (sizeof(u32) * i);
-		tmp |= (u64)DT_PROP_DATA_TO_U32(prop->data, offset) <<
-			((addr_cells - i - 1) * 32);
-	}
-	start = (phys_addr_t)tmp;
-	if (start != tmp) {
-		pr_err("phys_addr_t is smaller than provided address 0x%llx!\n",
-				tmp);
-		return -EINVAL;
-	}
+		end = start + size;
+		i = early_phys_addr_to_memc(start);
 
-	tmp = 0;
-	for (i = 0; i < size_cells; ++i) {
-		int offset = (cellslen * bank_nr) +
-			(sizeof(u32) * (i + addr_cells));
-		tmp |= (u64)DT_PROP_DATA_TO_U32(prop->data, offset) <<
-			((size_cells - i - 1) * 32);
-	}
-	size = (phys_addr_t)tmp;
-
-	end = start + size;
-
-	if (bank_nr == 0) {
-		limit = memblock_get_current_limit();
-		/* On ARM64 systems, force the first memory controller to be
-		 * partitioned the same way it would on ARM (32-bit) by
-		 * giving 256MB to the kernel, the rest to BMEM
-		 */
+		if (offset == cellslen) {	/* First Bank */
+			limit = memblock_get_current_limit();
+			/*
+			 *  On ARM64 systems, force the first memory controller
+			 * to be partitioned the same way it would on ARM
+			 * (32-bit) by giving 256MB to the kernel, the rest to
+			 * BMEM
+			 */
 #ifdef CONFIG_ARM64
-		if (limit > start + SZ_256M)
-			limit = start + SZ_256M;
+			if (limit > start + SZ_256M)
+				limit = start + SZ_256M;
 #endif
-		if (end <= limit &&
-		    end == memblock_end_of_DRAM()) {
-			if (size < SZ_32M) {
-				pr_err("low memory too small for default bmem\n");
-				return -EINVAL;
+			if (end <= limit &&
+				end == memblock_end_of_DRAM()) {
+				if (size < SZ_32M) {
+					pr_err("low memory too small for default bmem\n");
+					continue;
+				}
+
+				if (brcmstb_default_reserve ==
+				    BRCMSTB_RESERVE_BMEM) {
+					if (size <= SZ_128M)
+						continue;
+
+					adj = SZ_128M;
+				}
+
+				/* kernel reserves X percent,
+				 * bmem gets the rest */
+				tmp = ((u64)(size - adj)) *
+				      (100 - DEFAULT_LOWMEM_PCT);
+				do_div(tmp, 100);
+				size = tmp;
+				start = end - size;
+			} else if (end > limit) {
+				start = limit;
+				size = end - start;
+			} else {
+				if (size >= SZ_1G)
+					start += SZ_512M;
+				else if (size >= SZ_512M)
+					start += SZ_256M;
+				else
+					continue;
+				size = end - start;
 			}
-
-			if (brcmstb_default_reserve == BRCMSTB_RESERVE_BMEM) {
-				if (size <= SZ_128M)
-					return -EINVAL;
-
-				adj = SZ_128M;
-			}
-
-			/* kernel reserves X percent, bmem gets the rest */
-			tmp = ((u64)(size - adj)) * (100 - DEFAULT_LOWMEM_PCT);
-			do_div(tmp, 100);
-			size = tmp;
-			start = end - size;
-		} else if(end > limit) {
-			start = limit;
-			size = end - start;
-		} else {
-			if (size >= SZ_1G)
-				start += SZ_512M;
-			else if (size >= SZ_512M)
-				start += SZ_256M;
-			else
-				return -EINVAL;
-			size = end - start;
+		} else if (i > prev_memc) {
+			/* Use entire first region of this MEMC */
+			prev_memc = i;
+		} else if (start >= VME_A32_MAX && size > SZ_64M) {
+			/*
+			 * Nexus doesn't use the address extension range yet,
+			 * just reserve 64 MiB in these areas until we have a
+			 * firmer specification
+			 */
+			size = SZ_64M;
 		}
-	} else if (start >= VME_A32_MAX && size > SZ_64M) {
-		/*
-		 * Nexus doesn't use the address extension range yet, just
-		 * reserve 64 MiB in these areas until we have a firmer
-		 * specification
-		 */
-		size = SZ_64M;
+
+		brcmstb_memory_set_range(start, start + size, setup);
 	}
-
-	/*
-	 * To keep things simple, we only handle the case where reserved memory
-	 * is at the start or end of a region.
-	 */
-	i = 0;
-	while (i < memblock.reserved.cnt) {
-		struct memblock_region *region = &memblock.reserved.regions[i];
-		newstart = start;
-		newsize = size;
-
-		if (start >= region->base &&
-				start < region->base + region->size) {
-			/* adjust for reserved region at beginning */
-			newstart = region->base + region->size;
-			newsize = size - (newstart - start);
-		} else if (start < region->base) {
-			if (start + size >
-					region->base + region->size) {
-				/* unhandled condition */
-				pr_err("%s: Split region %pa@%pa, reserve will fail\n",
-						__func__, &size, &start);
-				/* enable 'memblock=debug' for dump output */
-				memblock_dump_all();
-				return -EINVAL;
-			}
-			/* adjust for reserved region at end */
-			newsize = min(region->base - start, size);
-		}
-		/* see if we had any modifications */
-		if (newsize != size || newstart != start) {
-			pr_debug("%s: moving default region from %pa@%pa to %pa@%pa\n",
-					__func__, &size, &start, &newsize,
-					&newstart);
-			size = newsize;
-			start = newstart;
-			i = 0; /* start over */
-		} else {
-			++i;
-		}
-	}
-
-	/* Fix up alignment */
-	newstart = ALIGN(start, alignment);
-	if (newstart != start) {
-		pr_debug("adjusting start from %pa to %pa\n",
-				&start, &newstart);
-
-		if (size > (newstart - start))
-			size -= (newstart - start);
-		else
-			size = 0;
-
-		start = newstart;
-	}
-	newsize = round_down(size, alignment);
-	if (newsize != size) {
-		pr_debug("adjusting size from %pa to %pa\n",
-				&size, &newsize);
-		size = newsize;
-	}
-
-	if (size == 0) {
-		pr_debug("size available in bank was 0 - skipping\n");
-		return -EINVAL;
-	}
-
-	*pstart = start;
-	*psize = size;
-
-	return 0;
 }
 
 /**

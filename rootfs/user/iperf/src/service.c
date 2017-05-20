@@ -221,7 +221,7 @@ BOOL ReportStatusToSCMgr(DWORD dwCurrentState,
 VOID AddToMessageLog(LPTSTR lpszMsg) {
     TCHAR   szMsg[256];
     HANDLE  hEventSource;
-    LPTSTR  lpszStrings[2];
+    LPCTSTR lpszStrings[2];
 
 
     dwErr = GetLastError();
@@ -232,7 +232,7 @@ VOID AddToMessageLog(LPTSTR lpszMsg) {
 
     printf(lpszMsg);
 
-    _stprintf(szMsg, TEXT("%s error: %d"), TEXT(SZSERVICENAME), dwErr);
+    _stprintf(szMsg, TEXT("%s error: %d"), TEXT(SZSERVICENAME), (int)dwErr);
     lpszStrings[0] = szMsg;
     lpszStrings[1] = lpszMsg;
 
@@ -310,9 +310,9 @@ void CmdInstallService(int argc, char **argv) {
         }
         if ( schService ) {
             if ( QueryServiceStatus( schService, &ssStatus ) ) {
-                int rc;
+                int rc = 0;
                 if ( ssStatus.dwCurrentState == SERVICE_STOPPED ) {
-                    rc = StartService(schService, argc-1, argv+1);
+		    rc = StartService(schService, argc-1, (LPCTSTR*)argv+1);
                 }
 
 
@@ -431,9 +431,9 @@ BOOL CmdStartService(int argc, char **argv) {
         if ( schService ) {
             isExist = TRUE;
             if ( QueryServiceStatus( schService, &ssStatus ) ) {
-                int rc;
+                int rc = 0;
                 if ( ssStatus.dwCurrentState == SERVICE_STOPPED ) {
-                    rc = StartService(schService, argc-1, argv+1);
+		    rc = StartService(schService, argc-1, (LPCTSTR*)argv+1);
                 }
 
 
@@ -483,7 +483,7 @@ LPTSTR GetLastErrorText( LPTSTR lpszBuf, DWORD dwSize ) {
         lpszBuf[0] = TEXT('\0');
     else {
         lpszTemp[lstrlen(lpszTemp)-2] = TEXT('\0');  //remove cr and newline character
-        _stprintf( lpszBuf, TEXT("%s (0x%x)"), lpszTemp, GetLastError() );
+        _stprintf( lpszBuf, TEXT("%s (0x%x)"), lpszTemp, (unsigned int)GetLastError() );
     }
 
     if ( lpszTemp )
@@ -492,110 +492,7 @@ LPTSTR GetLastErrorText( LPTSTR lpszBuf, DWORD dwSize ) {
     return lpszBuf;
 }
 
-/*--------------------------------------------------------------------
- * ServiceStart
- *
- * each time starting the service, this is the entry point of the service.
- * Start the service, certainly it is on server-mode
- * 
- *-------------------------------------------------------------------- */
-VOID ServiceStart (DWORD dwArgc, LPTSTR *lpszArgv) {
-    
-    // report the status to the service control manager.
-    //
-    if ( !ReportStatusToSCMgr(
-                             SERVICE_START_PENDING, // service state
-                             NO_ERROR,              // exit code
-                             3000) )                 // wait hint
-        goto clean;
-
-    thread_Settings* ext_gSettings = new thread_Settings;
-
-    // Initialize settings to defaults
-    Settings_Initialize( ext_gSettings );
-    // read settings from environment variables
-    Settings_ParseEnvironment( ext_gSettings );
-    // read settings from command-line parameters
-    Settings_ParseCommandLine( dwArgc, lpszArgv, ext_gSettings );
-
-    // report the status to the service control manager.
-    //
-    if ( !ReportStatusToSCMgr(
-                             SERVICE_START_PENDING, // service state
-                             NO_ERROR,              // exit code
-                             3000) )                 // wait hint
-        goto clean;
-
-    // if needed, redirect the output into a specified file
-    if ( !isSTDOUT( ext_gSettings ) ) {
-        redirect( ext_gSettings->mOutputFileName );
-    }
-
-    // report the status to the service control manager.
-    //
-    if ( !ReportStatusToSCMgr(
-                             SERVICE_START_PENDING, // service state
-                             NO_ERROR,              // exit code
-                             3000) )                 // wait hint
-        goto clean;
-    
-    // initialize client(s)
-    if ( ext_gSettings->mThreadMode == kMode_Client ) {
-        client_init( ext_gSettings );
-    }
-
-    // start up the reporter and client(s) or listener
-    {
-        thread_Settings *into = NULL;
-#ifdef HAVE_THREAD
-        Settings_Copy( ext_gSettings, &into );
-        into->mThreadMode = kMode_Reporter;
-        into->runNow = ext_gSettings;
-#else
-        into = ext_gSettings;
 #endif
-        thread_start( into );
-    }
-    
-    // report the status to the service control manager.
-    //
-    if ( !ReportStatusToSCMgr(
-                             SERVICE_RUNNING,       // service state
-                             NO_ERROR,              // exit code
-                             0) )                    // wait hint
-        goto clean;
-
-    clean:
-    // wait for other (client, server) threads to complete
-    thread_joinall();
-}
 
 
-//
-//  FUNCTION: ServiceStop
-//
-//  PURPOSE: Stops the service
-//
-//  PARAMETERS:
-//    none
-//
-//  RETURN VALUE:
-//    none
-//
-//  COMMENTS:
-//    If a ServiceStop procedure is going to
-//    take longer than 3 seconds to execute,
-//    it should spawn a thread to execute the
-//    stop code, and return.  Otherwise, the
-//    ServiceControlManager will believe that
-//    the service has stopped responding.
-//    
-VOID ServiceStop() {
-#ifdef HAVE_THREAD
-    Sig_Interupt( 1 );
-#else
-    sig_exit(1);
-#endif
-}
 
-#endif

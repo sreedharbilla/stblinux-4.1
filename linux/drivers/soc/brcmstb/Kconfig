@@ -36,6 +36,20 @@ config BRCMSTB_CMA
 
 	  If you are planning to use Broadcom middleware, choose Y here.
 
+config BRCMSTB_DPFE
+	bool "Broadcom STB DDR PHY Front End Driver"
+	depends on (ARCH_BRCMSTB && (ARM || ARM64)) || COMPILE_TEST
+	default y
+	help
+	  The DPFE driver provides a sysfs interface to the DCPU residing
+	  within the DDR PHY. This interface provides information about the
+	  DRAM, including the refresh rate. The refresh rate can be used as
+	  an indicator for DRAM temperature (higher refresh rate means
+	  hotter DRAM).
+
+	  If you would like an indirect indicator for DRAM temperature at
+	  run time, say Y here.
+
 config BRCMSTB_MEMORY_API
 	bool "Enable BRCMSTB memory API"
 	depends on HAVE_MEMBLOCK && (ARCH_BRCMSTB || BMIPS_GENERIC)

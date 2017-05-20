@@ -12,9 +12,24 @@
 /* Define to 1 if you have the `atexit' function. */
 #undef HAVE_ATEXIT
 
+/* Define to 1 if you have the `clock_gettime' function. */
+#undef HAVE_CLOCK_GETTIME
+
 /* Define to 1 if you have the declaration of `AF_INET6', and to 0 if you
    don't. */
 #undef HAVE_DECL_AF_INET6
+
+/* Define to 1 if you have the declaration of `CPU_SET', and to 0 if you
+   don't. */
+#undef HAVE_DECL_CPU_SET
+
+/* Define to 1 if you have the declaration of `ENOBUFS', and to 0 if you
+   don't. */
+#undef HAVE_DECL_ENOBUFS
+
+/* Define to 1 if you have the declaration of `EWOULDBLOCK', and to 0 if you
+   don't. */
+#undef HAVE_DECL_EWOULDBLOCK
 
 /* Define to 1 if you have the declaration of `IPV6_ADD_MEMBERSHIP', and to 0
    if you don't. */
@@ -27,6 +42,18 @@
 /* Define to 1 if you have the declaration of `IP_ADD_MEMBERSHIP', and to 0 if
    you don't. */
 #undef HAVE_DECL_IP_ADD_MEMBERSHIP
+
+/* Define to 1 if you have the declaration of `SIGALRM', and to 0 if you
+   don't. */
+#undef HAVE_DECL_SIGALRM
+
+/* Define to 1 if you have the declaration of `SO_SNDTIMEO', and to 0 if you
+   don't. */
+#undef HAVE_DECL_SO_SNDTIMEO
+
+/* Define to 1 if you have the declaration of `SO_TIMESTAMP', and to 0 if you
+   don't. */
+#undef HAVE_DECL_SO_TIMESTAMP
 
 /* Define to 1 if you don't have `vprintf' but do have `_doprnt.' */
 #undef HAVE_DOPRNT
@@ -52,18 +79,17 @@
 /* Define to enable IPv6 multicast support */
 #undef HAVE_IPV6_MULTICAST
 
+/* Define if Kalman tuning is desired and available */
+#undef HAVE_KALMAN
+
 /* Define to 1 if you have the <libintl.h> header file. */
 #undef HAVE_LIBINTL_H
 
-/* Define to 1 if you have the `nsl' library (-lnsl). */
-#undef HAVE_LIBNSL
+/* Define to 1 if you have the `rt' library (-lrt). */
+#undef HAVE_LIBRT
 
-/* Define to 1 if you have the `socket' library (-lsocket). */
-#undef HAVE_LIBSOCKET
-
-/* Define to 1 if your system has a GNU libc compatible `malloc' function, and
-   to 0 otherwise. */
-#undef HAVE_MALLOC
+/* Define if libws2_32 exists. */
+#undef HAVE_LIBWS2_32
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
@@ -71,8 +97,14 @@
 /* Define to 1 if you have the `memset' function. */
 #undef HAVE_MEMSET
 
+/* Define to 1 if you have the `mlockall' function. */
+#undef HAVE_MLOCKALL
+
 /* Define to enable multicast support */
 #undef HAVE_MULTICAST
+
+/* Define to 1 if you have the `nanosleep' function. */
+#undef HAVE_NANOSLEEP
 
 /* Define to 1 if you have the <netdb.h> header file. */
 #undef HAVE_NETDB_H
@@ -95,8 +127,17 @@
 /* */
 #undef HAVE_QUAD_SUPPORT
 
+/* Define to 1 if you have the `sched_setscheduler' function. */
+#undef HAVE_SCHED_SETSCHEDULER
+
 /* Define to 1 if you have the `select' function. */
 #undef HAVE_SELECT
+
+/* Define to 1 if you have the `setitimer' function. */
+#undef HAVE_SETITIMER
+
+/* Define to 1 if you have the <signal.h> header file. */
+#undef HAVE_SIGNAL_H
 
 /* Define to 1 if you have the `snprintf' function. */
 #undef HAVE_SNPRINTF
@@ -140,6 +181,9 @@
 /* Define to 1 if the system has the type `struct sockaddr_storage'. */
 #undef HAVE_STRUCT_SOCKADDR_STORAGE
 
+/* Define to 1 if `tcpi_total_retrans' is a member of `struct tcp_info'. */
+#undef HAVE_STRUCT_TCP_INFO_TCPI_TOTAL_RETRANS
+
 /* Define to 1 if you have the <syslog.h> header file. */
 #undef HAVE_SYSLOG_H
 
@@ -175,6 +219,9 @@
 
 /* Define if Web100 is desired and available */
 #undef HAVE_WEB100
+
+/* Define if using WIN32 threads */
+#undef HAVE_WIN32_THREAD
 
 /* Define to 1 if `fork' works. */
 #undef HAVE_WORKING_FORK
@@ -275,9 +322,6 @@
 
 /* */
 #undef false
-
-/* Define to rpl_malloc if the replacement function should be used. */
-#undef malloc
 
 /* Define to `int' if <sys/types.h> does not define. */
 #undef pid_t

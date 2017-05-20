@@ -1,3 +1,5 @@
+/include/ "clks-7425b0.dtsi"
+
 / {
 	#address-cells = <1>;
 	#size-cells = <1>;
@@ -59,6 +61,8 @@
 			0 3 &periph_intc 35
 			3 0 0 0
 			4 &periph_intc 36 3>;
+		clocks = <&sw_pcie>;
+		clock-names = "sw_pcie";
 	};
 
 	cpu_intc: cpu_intc {
@@ -254,6 +258,8 @@
 			interrupt-parent = <&periph_intc>;
 			interrupts = <0x19>;
 			interrupt-names = "hif_spi";
+			clocks = <&sw_spi>;
+			clock-name = "sw_spi";
 		};
 
 		nand: nand@41b800 {
@@ -293,6 +299,7 @@
 
 		enet0: ethernet@b80000 {
 			phy-mode = "internal";
+			fixed-link = <0 1 1000 0 0>;
 			phy-handle = <&phy1>;
 			mac-address = [ 00 10 18 36 23 1a ];
 			compatible = "brcm,genet-v3";
@@ -305,12 +312,15 @@
 					<&periph_intc 18>,
 					<&aon_pm_l2_intc 8>;
 			status = "disabled";
+			clocks = <&sw_genet0>, <&sw_genetwol0>, <&sw_geneteee0>;
+			clock-names = "sw_genet", "sw_genetwol", "sw_geneteee";
 
 			mdio@e14 {
 				compatible = "brcm,genet-mdio-v3";
 				#address-cells = <0x1>;
 				#size-cells = <0x0>;
 				reg = <0xe14 0x8>;
+				status = "okay";
 
 				phy1: ethernet-phy@1 {
 					max-speed = <100>;
@@ -335,6 +345,8 @@
 					<&periph_intc 20>,
 					<&aon_pm_l2_intc 7>;
 			status = "disabled";
+			clocks = <&sw_genet1>, <&sw_genetwol1>, <&sw_geneteee1>;
+			clock-names = "sw_genet", "sw_genetwol", "sw_geneteee";
 
 			mdio@e14 {
 				compatible = "brcm,genet-mdio-v3";
@@ -345,80 +357,149 @@
 			};
 		};
 
+
+		usbphy_0: usb-phy@480200 {
+			reg = <0x480200 0x100>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "brcm,usb-phy";
+			status = "disabled";
+			brcm,ioc = <1>;
+			brcm,ipp = <1>;
+			#phy-cells = <1>;
+			ranges;
+			clocks = <&sw_usb0>;
+			clock-names = "sw_usb";
+		};
+
 		ehci0: usb@480300 {
-			compatible = "brcm,bcm7425-ehci", "generic-ehci";
+			compatible = "brcm,bcm7425-ehci",
+				   "brcm,ehci-brcm-v2" , "generic-ehci";
 			reg = <0x480300 0x100>;
 			native-endian;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <65>;
 			status = "disabled";
+			clocks = <&sw_usb0>;
+			clock-names = "sw_usb";
+			phys = <&usbphy_0 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ohci0: usb@480400 {
-			compatible = "brcm,bcm7425-ohci", "generic-ohci";
+			compatible = "brcm,bcm7425-ohci",
+				   "brcm,ohci-brcm-v2", "generic-ohci";
 			reg = <0x480400 0x100>;
 			native-endian;
 			no-big-frame-no;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <67>;
 			status = "disabled";
+			clocks = <&sw_usb0>;
+			clock-names = "sw_usb";
+			phys = <&usbphy_0 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ehci1: usb@480500 {
-			compatible = "brcm,bcm7425-ehci", "generic-ehci";
+			compatible = "brcm,bcm7425-ehci",
+				   "brcm,ehci-brcm-v2", "generic-ehci";
 			reg = <0x480500 0x100>;
 			native-endian;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <66>;
 			status = "disabled";
+			clocks = <&sw_usb0>;
+			clock-names = "sw_usb";
+			phys = <&usbphy_0 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ohci1: usb@480600 {
-			compatible = "brcm,bcm7425-ohci", "generic-ohci";
+			compatible = "brcm,bcm7425-ohci",
+				   "brcm,ohci-brcm-v2", "generic-ohci";
 			reg = <0x480600 0x100>;
 			native-endian;
 			no-big-frame-no;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <68>;
 			status = "disabled";
+			clocks = <&sw_usb0>;
+			clock-names = "sw_usb";
+			phys = <&usbphy_0 0x0>;
+			phy-names = "usbphy";
+		};
+
+		usbphy_1: usb-phy@490200 {
+			reg = <0x490200 0x100>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "brcm,usb-phy";
+			status = "disabled";
+			brcm,ioc = <1>;
+			brcm,ipp = <1>;
+			#phy-cells = <1>;
+			ranges;
+			clocks = <&sw_usb1>;
+			clock-names = "sw_usb";
 		};
 
 		ehci2: usb@490300 {
-			compatible = "brcm,bcm7425-ehci", "generic-ehci";
+			compatible = "brcm,bcm7425-ehci",
+				   "brcm,ehci-brcm-v2", "generic-ehci";
 			reg = <0x490300 0x100>;
 			native-endian;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <70>;
 			status = "disabled";
+			clocks = <&sw_usb1>;
+			clock-names = "sw_usb";
+			phys = <&usbphy_1 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ohci2: usb@490400 {
-			compatible = "brcm,bcm7425-ohci", "generic-ohci";
+			compatible = "brcm,bcm7425-ohci",
+				   "brcm,ohci-brcm-v2", "generic-ohci";
 			reg = <0x490400 0x100>;
 			native-endian;
 			no-big-frame-no;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <72>;
 			status = "disabled";
+			clocks = <&sw_usb1>;
+			clock-names = "sw_usb";
+			phys = <&usbphy_1 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ehci3: usb@490500 {
-			compatible = "brcm,bcm7425-ehci", "generic-ehci";
+			compatible = "brcm,bcm7425-ehci",
+				   "brcm,ehci-brcm-v2", "generic-ehci";
 			reg = <0x490500 0x100>;
 			native-endian;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <71>;
 			status = "disabled";
+			clocks = <&sw_usb1>;
+			clock-names = "sw_usb";
+			phys = <&usbphy_1 0x0>;
+			phy-names = "usbphy";
 		};
 
 		ohci3: usb@490600 {
-			compatible = "brcm,bcm7425-ohci", "generic-ohci";
+			compatible = "brcm,bcm7425-ohci",
+				   "brcm,ohci-brcm-v2", "generic-ohci";
 			reg = <0x490600 0x100>;
 			native-endian;
 			no-big-frame-no;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <73>;
 			status = "disabled";
+			clocks = <&sw_usb1>;
+			clock-names = "sw_usb";
+			phys = <&usbphy_1 0x0>;
+			phy-names = "usbphy";
 		};
 
 		upg_gio: gpio@406700 {
@@ -462,6 +543,8 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "disabled";
+			clocks = <&sw_sata3>;
+			clock-names = "sw_sata3";
 
 			sata0: sata-port@0 {
 				reg = <0>;
@@ -507,7 +590,10 @@
 			i2c-base = <0x10406200>;
 			i2c-addr = <0x70>;
 			status = "disabled";
+			clocks = <&sw_mocawol>;
+			clock-names = "sw_mocawol";
 		};
+
 		sdhci0: sdhci@419000 {
 			compatible = "brcm,sdhci-brcmstb";
 			reg = <0x419000 0x100 0x419100 0x100>;
@@ -518,6 +604,8 @@
 			sdhci,auto-cmd12;
 			no-1-8-v;
 			status = "disabled";
+			clocks = <&sw_sdio>;
+			clock-names = "sw_sdio";
 		};
 		sdhci1: sdhci@419200 {
 			compatible = "brcm,sdhci-brcmstb";
@@ -532,6 +620,8 @@
 			sdhci,auto-cmd12;
 			no-1-8-v;
 			status = "disabled";
+			clocks = <&sw_sdio>;
+			clock-names = "sw_sdio";
 		};
 		brcm_pmx_core: pinmux@404100 {
 			compatible = "brcm,7425-padconf", "pinctrl-single";

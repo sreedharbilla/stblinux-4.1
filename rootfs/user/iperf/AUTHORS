@@ -34,3 +34,5 @@ Nathan Jones <nmjones@users.sourceforge.net>
 
 Gerrit Renker <grenker@users.sourceforge.net>
   * replace costly gettimeofday() with nanonsleep()
+
+Robert J. McMahon & Tim Auckland 

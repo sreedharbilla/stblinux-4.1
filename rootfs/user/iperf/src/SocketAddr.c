@@ -117,7 +117,55 @@ void SockAddr_localAddr( thread_Settings *inSettings ) {
     }
         inSettings->size_local = sizeof( struct sockaddr_in );
 #endif
-    SockAddr_setPort( &inSettings->local, inSettings->mPort );
+     /*
+      *  This section handles the *local* port binding (which is messy)
+      *  Quintuple is Proto:LocalIP:LocalPort:DstIP:DstPort
+      *
+      *  There are three threads being Client, Listener and Server
+      *  mPort comes from the -p command (which defaults to 5001)
+      *  mLocalhost indicates -B set requesting a local binding 
+      *  mBindPort comes from -B IP:<port> (where port defaults to 0)
+      *  Multicast IP address, e.g. 239.1.1.1, is set per a -B
+      *  Zero will cause the OS to auto assign a LocalPort
+      *  For iperf -s; Windows uses listener thread, *nix a server thread
+      *  (so, effectively, Listener and Server threads are the same)
+      *  Client threads support either auto assignment (default) or 
+      *  user specified (via -B)
+      */
+     if (inSettings->mLocalhost == NULL) {
+	 if (inSettings->mThreadMode == kMode_Client) {
+	     /* 
+	      * Client thread, -p and no -B,
+	      * OS will auto assign a free local port 
+	      */
+	     SockAddr_setPortAny (&inSettings->local);
+	 } else {
+	     /* Server or Listener thread, -p and no -B */
+	     SockAddr_setPort( &inSettings->local, inSettings->mPort );
+	 }
+     } else {
+	 /* -B was set (required to receive IP multicast) */
+	  if (inSettings->mThreadMode == kMode_Client) {
+	       /* Client thread */
+	       if (inSettings->mBindPort) {
+		   /* 
+		    * User specified port so use it 
+		    */
+		    SockAddr_setPort( &inSettings->local, inSettings->mBindPort );
+	       } else {
+		   /* 
+		    * No user specified port, let OS assign a free one 
+		    */
+		    SockAddr_setPortAny (&inSettings->local);
+	       }
+	  } else {
+	      /* 
+	       * Server or Listener thread, both always use -p port
+	       * any -B port will be ignored
+	       */
+	      SockAddr_setPort( &inSettings->local, inSettings->mPort );
+	  }
+     }
 }
 // end SocketAddr
 

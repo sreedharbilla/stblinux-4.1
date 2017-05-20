@@ -342,3 +342,13 @@ config SERIAL_8250_MT6577
 	help
 	  If you have a Mediatek based board and want to use the
 	  serial port, say Y to this option. If unsure, say N.
+
+config SERIAL_8250_BCM7271
+	bool "Broadcom 8250 based serial port"
+	depends on SERIAL_8250 && (ARCH_BRCMSTB || COMPILE_TEST)
+	default ARCH_BRCMSTB
+	help
+	  If you have a Broadcom STB based board and want to use the
+	  enhanced features of the Broadcom 8250 based serial port, say
+	  Y to this option. If unsure, say N.
+

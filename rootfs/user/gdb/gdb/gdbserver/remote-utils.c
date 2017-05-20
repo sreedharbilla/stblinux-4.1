@@ -433,8 +433,6 @@ fromhex (int a)
 
 #endif
 
-static const char hexchars[] = "0123456789abcdef";
-
 static int
 ishex (int ch, int *val)
 {

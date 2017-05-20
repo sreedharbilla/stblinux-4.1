@@ -1,3 +1,3 @@
 obj-y	:=	irq.o \
-		gpio.o \
 		reg.o
+obj-$(CONFIG_GPIOLIB) += gpio.o

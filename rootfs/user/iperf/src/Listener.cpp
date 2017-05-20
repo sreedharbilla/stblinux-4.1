@@ -118,7 +118,7 @@ Listener::~Listener() {
  *          spawn a new Server thread. 
  * ------------------------------------------------------------------- */ 
 void Listener::Run( void ) {
-#ifdef WIN32
+#if 0 // ifdef WIN32 removed to allow Windows to use multi-threaded UDP server 
     if ( isUDP( mSettings ) && !isSingleUDP( mSettings ) ) {
         UDPSingleServer();
     } else
@@ -163,8 +163,19 @@ void Listener::Run( void ) {
                 break;
             }
             if ( sInterupted != 0 ) {
-                close( server->mSock );
-                break;
+		// In the case of -r, ignore the clients alarm
+		if (
+#if HAVE_DECL_SIGALRM
+sInterupted == SIGALRM
+#else
+0
+#endif
+		    ) {
+		    sInterupted = 0;
+		} else {
+		    close( server->mSock );
+		    break;
+		}
             }
             // Reset Single Client Stuff
             if ( isSingleClient( mSettings ) && clients == NULL ) {
@@ -333,7 +344,7 @@ void Listener::Listen( ) {
 #endif
     {
         rc = bind( mSettings->mSock, (sockaddr*) &mSettings->local, mSettings->size_local );
-        WARN_errno( rc == SOCKET_ERROR, "bind" );
+        FAIL_errno( rc == SOCKET_ERROR, "bind", mSettings );
     }
     // listen for connections (TCP only).
     // default backlog traditionally 5
@@ -410,57 +421,91 @@ void Listener::McastSetTTL( int val ) {
 
 /* -------------------------------------------------------------------
  * After Listen() has setup mSock, this will block
- * until a new connection arrives.
+ * until a new connection arrives or until the -t value occurs
  * ------------------------------------------------------------------- */
 
 void Listener::Accept( thread_Settings *server ) {
 
     server->size_peer = sizeof(iperf_sockaddr); 
-    if ( isUDP( server ) ) {
-        /* ------------------------------------------------------------------- 
-         * Do the equivalent of an accept() call for UDP sockets. This waits 
-         * on a listening UDP socket until we get a datagram. 
-         * ------------------------------------------------------------------- */
-        int rc;
-        Iperf_ListEntry *exist;
-        int32_t datagramID;
-        server->mSock = INVALID_SOCKET;
-        while ( server->mSock == INVALID_SOCKET ) {
-            rc = recvfrom( mSettings->mSock, mBuf, mSettings->mBufLen, 0, 
-                           (struct sockaddr*) &server->peer, &server->size_peer );
-            FAIL_errno( rc == SOCKET_ERROR, "recvfrom", mSettings );
+    // Handles interupted accepts. Returns the newly connected socket.
+    server->mSock = INVALID_SOCKET;
 
-            Mutex_Lock( &clients_mutex );
+    bool mMode_Time = isServerModeTime( mSettings ) && !isDaemon( mSettings );
+    // setup termination variables
+    if ( mMode_Time ) {
+	mEndTime.setnow();
+	mEndTime.add( mSettings->mAmount / 100.0 );
+	if (!setsock_blocking(mSettings->mSock, 0)) {
+	    WARN(1, "Failed setting socket to non-blocking mode");
+	}
+    }
+
+    while ( server->mSock == INVALID_SOCKET) {
+	if (mMode_Time) {
+	    struct timeval t1;
+	    gettimeofday( &t1, NULL );
+	    if (mEndTime.before( t1)) {
+		break;
+	    }
+	    struct timeval timeout;
+	    timeout.tv_sec = mSettings->mAmount / 100;
+	    timeout.tv_usec = (mSettings->mAmount % 100) * 10000;
+	    fd_set set;
+	    FD_ZERO(&set);
+	    FD_SET(mSettings->mSock, &set);
+	    if (select( mSettings->mSock + 1, &set, NULL, NULL, &timeout) <= 0) {
+		break;
+	    }
+	}
+	if ( isUDP( server ) ) {
+	    /* ------------------------------------------------------------------------
+	     * Do the equivalent of an accept() call for UDP sockets. This waits
+	     * on a listening UDP socket until we get a datagram.
+	     * ------------------------------------------------------------------- ----*/
+	    int rc;
+	    Iperf_ListEntry *exist;
+	    int32_t datagramID;
+	    server->mSock = INVALID_SOCKET;
+
+	    rc = recvfrom( mSettings->mSock, mBuf, mSettings->mBufLen, 0,
+			   (struct sockaddr*) &server->peer, &server->size_peer );
+	    FAIL_errno( rc == SOCKET_ERROR, "recvfrom", mSettings );
+
+	    Mutex_Lock( &clients_mutex );
     
-            // Handle connection for UDP sockets.
-            exist = Iperf_present( &server->peer, clients);
-            datagramID = ntohl( ((UDP_datagram*) mBuf)->id ); 
-            if ( exist == NULL && datagramID >= 0 ) {
-                server->mSock = mSettings->mSock;
-                int rc = connect( server->mSock, (struct sockaddr*) &server->peer,
-                                  server->size_peer );
-                FAIL_errno( rc == SOCKET_ERROR, "connect UDP", mSettings );
-            } else {
-                server->mSock = INVALID_SOCKET;
-            }
-            Mutex_Unlock( &clients_mutex );
-        }
-    } else {
-        // Handles interupted accepts. Returns the newly connected socket.
-        server->mSock = INVALID_SOCKET;
-    
-        while ( server->mSock == INVALID_SOCKET ) {
-            // accept a connection
-            server->mSock = accept( mSettings->mSock, 
-                                    (sockaddr*) &server->peer, &server->size_peer );
-            if ( server->mSock == INVALID_SOCKET &&  errno == EINTR ) {
-                continue;
-            }
-        }
+	    // Handle connection for UDP sockets.
+	    exist = Iperf_present( &server->peer, clients);
+	    datagramID = ntohl( ((UDP_datagram*) mBuf)->id );
+	    if ( exist == NULL && datagramID >= 0 ) {
+		server->mSock = mSettings->mSock;
+		int rc = connect( server->mSock, (struct sockaddr*) &server->peer,
+				  server->size_peer );
+		FAIL_errno( rc == SOCKET_ERROR, "connect UDP", mSettings );
+	    } else {
+		server->mSock = INVALID_SOCKET;
+	    }
+	    Mutex_Unlock( &clients_mutex );
+	} else {
+	    // accept a TCP  connection
+	    server->mSock = accept( mSettings->mSock,  (sockaddr*) &server->peer, &server->size_peer );
+	    if ( server->mSock == INVALID_SOCKET &&
+#if WIN32
+		 WSAGetLastError() == WSAEINTR
+#else
+		 errno == EINTR
+#endif
+		) {
+		break;
+	    }
+	}
+    }
+    if (server->mSock != INVALID_SOCKET) {
+	if (!setsock_blocking(server->mSock, 1)) {
+	    WARN(1, "Failed setting socket to blocking mode");
+	}
     }
     server->size_local = sizeof(iperf_sockaddr); 
-    getsockname( server->mSock, (sockaddr*) &server->local, 
-                 &server->size_local );
+    getsockname( server->mSock, (sockaddr*) &server->local, &server->size_local );
 } // end Accept
 
 void Listener::UDPSingleServer( ) {
@@ -473,7 +518,13 @@ void Listener::UDPSingleServer( ) {
     client_hdr* hdr = ( UDP ? (client_hdr*) (((UDP_datagram*)mBuf) + 1) : 
                               (client_hdr*) mBuf);
     ReportStruct *reportstruct = new ReportStruct;
-    
+    bool mMode_Time = isServerModeTime( mSettings ) && !isDaemon( mSettings );
+    // setup termination variables
+    if ( mMode_Time ) {
+	mEndTime.setnow();
+	mEndTime.add( mSettings->mAmount / 100.0 );
+    }
+
     if ( mSettings->mHost != NULL ) {
         client = true;
         SockAddr_remoteAddr( mSettings );
@@ -491,6 +542,26 @@ void Listener::UDPSingleServer( ) {
         // Get next packet
         while ( sInterupted == 0) {
             server->size_peer = sizeof( iperf_sockaddr );
+
+	    if (mMode_Time) {
+		struct timeval t1;
+		gettimeofday( &t1, NULL );
+		if (mEndTime.before( t1)) {
+		    sInterupted = 1;
+		    break;
+		}
+		struct timeval timeout;
+		timeout.tv_sec = mSettings->mAmount / 100;
+		timeout.tv_usec = (mSettings->mAmount % 100) * 10000;
+		fd_set set;
+		FD_ZERO(&set);
+		FD_SET(mSettings->mSock, &set);
+		if (select( mSettings->mSock + 1, &set, NULL, NULL, &timeout) <= 0) {
+		    sInterupted = 1;
+		    break;
+		}
+	    }
+
             rc = recvfrom( mSettings->mSock, mBuf, mSettings->mBufLen, 0, 
                            (struct sockaddr*) &server->peer, &server->size_peer );
             WARN_errno( rc == SOCKET_ERROR, "recvfrom" );
@@ -670,47 +741,4 @@ void Listener::UDPSingleServer( ) {
     Settings_Destroy( server );
 }
 
-/* -------------------------------------------------------------------- 
- * Run the server as a daemon  
- * --------------------------------------------------------------------*/ 
-
-void Listener::runAsDaemon(const char *pname, int facility) {
-#ifndef WIN32 
-    pid_t pid; 
-
-    /* Create a child process & if successful, exit from the parent process */ 
-    if ( (pid = fork()) == -1 ) {
-        fprintf( stderr, "error in first child create\n");     
-        exit(0); 
-    } else if ( pid != 0 ) {
-        exit(0); 
-    }
-
-    /* Try becoming the session leader, once the parent exits */
-    if ( setsid() == -1 ) {           /* Become the session leader */ 
-        fprintf( stderr, "Cannot change the session group leader\n"); 
-    } else {
-    } 
-    signal(SIGHUP,SIG_IGN); 
-
-
-    /* Now fork() and get released from the terminal */  
-    if ( (pid = fork()) == -1 ) {
-        fprintf( stderr, "error\n");   
-        exit(0); 
-    } else if ( pid != 0 ) {
-        exit(0); 
-    }
-
-    chdir("."); 
-    fprintf( stderr, "Running Iperf Server as a daemon\n"); 
-    fprintf( stderr, "The Iperf daemon process ID : %d\n",((int)getpid())); 
-    fflush(stderr); 
-
-    fclose(stdin); 
-#else 
-    fprintf( stderr, "Use the precompiled windows version for service (daemon) option\n"); 
-#endif  
-
-}
 

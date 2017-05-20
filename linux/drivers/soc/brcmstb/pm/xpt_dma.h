@@ -19,6 +19,7 @@
 struct dma_region {
 	dma_addr_t addr;
 	size_t len;
+	bool persistent;
 };
 
 struct mcpb_dma_desc {

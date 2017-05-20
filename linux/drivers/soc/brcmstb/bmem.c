@@ -1,5 +1,5 @@
 /*
- * Copyright © 2015-2016 Broadcom
+ * Copyright © 2015-2017 Broadcom
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as
@@ -140,26 +140,6 @@ int bmem_region_info(int idx, phys_addr_t *addr, phys_addr_t *size)
 }
 EXPORT_SYMBOL(bmem_region_info);
 
-static void __init bmem_setup_defaults(void)
-{
-	int ret, iter = 0;
-
-	do {
-		phys_addr_t start, size;
-		if (n_bmem_regions == MAX_BMEM_REGIONS) {
-			pr_warn_once("%s: too many regions, ignoring extras\n",
-					__func__);
-			return;
-		}
-
-		/* fill in start and size */
-		ret = brcmstb_memory_get_default_reserve(iter, &start, &size);
-		if (!ret)
-			__bmem_setup(start, size);
-		iter++;
-	} while (ret != -ENOMEM);
-}
-
 void __init bmem_reserve(void)
 {
 	int i;
@@ -173,7 +153,7 @@ void __init bmem_reserve(void)
 	if (brcmstb_default_reserve == BRCMSTB_RESERVE_BMEM &&
 			!n_bmem_regions &&
 			!brcmstb_memory_override_defaults)
-		bmem_setup_defaults();
+		brcmstb_memory_default_reserve(__bmem_setup);
 
 	for (i = 0; i < n_bmem_regions; ++i) {
 		ret = memblock_reserve(bmem_regions[i].addr,

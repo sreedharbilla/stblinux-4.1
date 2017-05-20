@@ -32,11 +32,13 @@ int fgetflags (const char * name, unsigned long * flags);
 int fgetversion (const char * name, unsigned long * version);
 int fsetflags (const char * name, unsigned long flags);
 int fsetversion (const char * name, unsigned long version);
+int fgetproject(const char *name, unsigned long *project);
+int fsetproject(const char *name, unsigned long project);
 int getflags (int fd, unsigned long * flags);
 int getversion (int fd, unsigned long * version);
 int iterate_on_dir (const char * dir_name,
 		    int (*func) (const char *, struct dirent *, void *),
-		    void * private);
+		    void * private_arg);
 void list_super(struct ext2_super_block * s);
 void list_super2(struct ext2_super_block * s, FILE *f);
 void print_fs_errors (FILE * f, unsigned short errors);
@@ -66,6 +68,7 @@ int e2p_string2mntopt(char *string, unsigned int *mask);
 int e2p_edit_mntopts(const char *str, __u32 *mntopts, __u32 ok);
 
 unsigned long parse_num_blocks(const char *arg, int log_block_size);
+unsigned long long parse_num_blocks2(const char *arg, int log_block_size);
 
 char *e2p_os2string(int os_type);
 int e2p_string2os(char *str);

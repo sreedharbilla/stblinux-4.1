@@ -18,6 +18,15 @@
 #ifndef _BRCMSTB_GPIO_API_H
 #define _BRCMSTB_GPIO_API_H
 
+#ifdef CONFIG_GPIOLIB
+int brcmstb_gpio_update32(uint32_t addr, uint32_t mask, uint32_t value);
+#else
+static inline int brcmstb_gpio_update32(uint32_t addr, uint32_t mask,
+					uint32_t value)
+{
+	return -ENODEV;
+}
+#endif
 int brcmstb_gpio_irq(uint32_t addr, unsigned int shift);
 void brcmstb_gpio_remove(void);
 

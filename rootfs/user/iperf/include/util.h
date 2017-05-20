@@ -70,6 +70,7 @@ int getsock_tcp_windowsize( int inSock, int inSend );
 
 void setsock_tcp_mss( int inSock, int inTCPWin );
 int  getsock_tcp_mss( int inSock );
+bool setsock_blocking(int fd, bool blocking);
 
 /* -------------------------------------------------------------------
  * signal handlers
@@ -84,6 +85,9 @@ SigfuncPtr my_signal( int inSigno, SigfuncPtr inFunc );
 
 #ifdef WIN32
 
+#ifdef HAVE_SIGNAL_H
+  #define _NSIG NSIG
+#else
 /* under windows, emulate unix signals */
 enum {
     SIGINT,
@@ -91,6 +95,7 @@ enum {
     SIGPIPE,
     _NSIG
 };
+#endif
 
 BOOL WINAPI sig_dispatcher( DWORD type );
 

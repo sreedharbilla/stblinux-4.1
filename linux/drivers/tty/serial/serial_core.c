@@ -2044,6 +2044,7 @@ int uart_suspend_port(struct uart_driver *drv, struct uart_port *uport)
 	if (port->flags & ASYNC_INITIALIZED) {
 		const struct uart_ops *ops = uport->ops;
 		int tries;
+		unsigned int mctrl;
 
 		set_bit(ASYNCB_SUSPENDED, &port->flags);
 		clear_bit(ASYNCB_INITIALIZED, &port->flags);
@@ -2051,6 +2052,9 @@ int uart_suspend_port(struct uart_driver *drv, struct uart_port *uport)
 		spin_lock_irq(&uport->lock);
 		ops->stop_tx(uport);
 		ops->set_mctrl(uport, 0);
+		/* save mctrl so it can be restored on resume */
+		mctrl = uport->mctrl;
+		uport->mctrl = 0;
 		ops->stop_rx(uport);
 		spin_unlock_irq(&uport->lock);
 
@@ -2065,6 +2069,7 @@ int uart_suspend_port(struct uart_driver *drv, struct uart_port *uport)
 				drv->tty_driver->name_base + uport->line);
 
 		ops->shutdown(uport);
+		uport->mctrl = mctrl;
 	}
 
 	/*

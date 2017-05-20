@@ -1,4 +1,3 @@
-
 /*--------------------------------------------------------------- 
  * Copyright (c) 1999,2000,2001,2002,2003                              
  * The Board of Trustees of the University of Illinois            
@@ -76,6 +75,8 @@ Usage: iperf [-s|-c host] [options]\n\
        iperf [-h|--help] [-v|--version]\n\
 \n\
 Client/Server:\n\
+  -b, --bandwidth #[KMG | pps]  bandwidth to send at in bits/sec or packets per second\n\
+  -e, --enhancedreports    use enhanced reporting giving more tcp/udp and traffic information\n\
   -f, --format    [kmKM]   format to report: Kbits, Mbits, KBytes, MBytes\n\
   -i, --interval  #        seconds between periodic bandwidth reports\n\
   -l, --len       #[KM]    length of buffer to read or write (default 8 KB)\n\
@@ -83,12 +84,15 @@ Client/Server:\n\
   -o, --output    <filename> output the report or error message to this specified file\n\
   -p, --port      #        server port to listen on/connect to\n\
   -u, --udp                use UDP rather than TCP\n\
-  -w, --window    #[KM]    TCP window size (socket buffer size)\n\
-  -B, --bind      <host>   bind to <host>, an interface or multicast address\n\
+  -w, --window    #[KM]    TCP window size (socket buffer size)\n"
+#ifdef HAVE_SCHED_SETSCHEDULER
+"  -z, --realtime           request realtime scheduler\n"
+#endif
+"  -B, --bind      <host>   bind to <host>, an interface or multicast address\n\
   -C, --compatibility      for use with older versions does not sent extra msgs\n\
   -M, --mss       #        set TCP maximum segment size (MTU - 40 bytes)\n\
   -N, --nodelay            set TCP no delay, disabling Nagle's Algorithm\n\
-  -V, --IPv6Version        Set the domain to IPv6\n\
+  -V, --ipv6_domain        Set the domain to IPv6\n\
 \n\
 Server specific:\n\
   -s, --server             run in server mode\n\
@@ -102,13 +106,12 @@ Server specific:\n\
 const char usage_long2[] = "\
 \n\
 Client specific:\n\
-  -b, --bandwidth #[KM]    for UDP, bandwidth to send at in bits/sec\n\
-                           (default 1 Mbit/sec, implies -u)\n\
   -c, --client    <host>   run in client mode, connecting to <host>\n\
   -d, --dualtest           Do a bidirectional test simultaneously\n\
   -n, --num       #[KM]    number of bytes to transmit (instead of -t)\n\
   -r, --tradeoff           Do a bidirectional test individually\n\
   -t, --time      #        time in seconds to transmit for (default 10 secs)\n\
+  -B, --bind [<ip> | <ip:port>] bind src addr(s) from which to originate traffic\n\
   -F, --fileinput <name>   input the data to be transmitted from a file\n\
   -I, --stdin              input the data to be transmitted from stdin\n\
   -L, --listenport #       port to receive bidirectional tests back on\n\
@@ -128,6 +131,7 @@ The TCP window size option can be set by the environment variable\n\
 TCP_WINDOW_SIZE. Most other options can be set by an environment variable\n\
 IPERF_<long option name>, such as IPERF_BANDWIDTH.\n\
 \n\
+Source at <http://sourceforge.net/projects/iperf2/>\n\
 Report bugs to <iperf-users@lists.sourceforge.net>\n";
 
 // include a description of the threading in the version
@@ -155,6 +159,12 @@ const char server_port[] =
 const char client_port[] =
 "Client connecting to %s, %s port %d\n";
 
+const char server_pid_port[] =
+"Server listening on %s port %d with pid %d\n";
+
+const char client_pid_port[] =
+"Client connecting to %s, %s port %d with pid %d\n";
+
 const char bind_address[] =
 "Binding to local address %s\n";
 
@@ -165,7 +175,10 @@ const char join_multicast[] =
 "Joining multicast group  %s\n";
 
 const char client_datagram_size[] =
-"Sending %d byte datagrams\n";
+"Sending %d byte datagrams, IPG target: %4.2f us\n";
+
+const char client_datagram_size_kalman[] =
+"Sending %d byte datagrams, IPG target: %4.2f us (kalman adjust)\n";
 
 const char server_datagram_size[] =
 "Receiving %d byte datagrams\n";
@@ -183,14 +196,8 @@ const char wait_server_threads[] =
 "Waiting for server threads to complete. Interrupt again to force quit.\n";
 
 /* -------------------------------------------------------------------
- * reports
+ * Legacy reports
  * ------------------------------------------------------------------- */
-
-const char report_read_lengths[] =
-"[%3d] Read lengths occurring in more than 5%% of reads:\n";
-
-const char report_read_length_times[] =
-"[%3d] %5d bytes read %5d times (%.3g%%)\n";
 
 const char report_bw_header[] =
 "[ ID] Interval       Transfer     Bandwidth\n";
@@ -202,20 +209,83 @@ const char report_sum_bw_format[] =
 "[SUM] %4.1f-%4.1f sec  %ss  %ss/sec\n";
 
 const char report_bw_jitter_loss_header[] =
-"[ ID] Interval       Transfer     Bandwidth        Jitter   Lost/Total \
-Datagrams\n";
-
+"[ ID] Interval       Transfer     Bandwidth        Jitter   Lost/Total Datagrams\n";
 const char report_bw_jitter_loss_format[] =
 "[%3d] %4.1f-%4.1f sec  %ss  %ss/sec  %6.3f ms %4d/%5d (%.2g%%)\n";
 
 const char report_sum_bw_jitter_loss_format[] =
 "[SUM] %4.1f-%4.1f sec  %ss  %ss/sec  %6.3f ms %4d/%5d (%.2g%%)\n";
 
+/* -------------------------------------------------------------------
+ * Enhanced reports (per -e)
+ * ------------------------------------------------------------------- */
+
+const char report_bw_enhanced_format[] =
+"[%3d] %4.2f-%4.2f sec  %ss  %ss/sec\n";
+
+const char report_sum_bw_enhanced_format[] =
+"[SUM] %4.2f-%4.2f sec  %ss  %ss/sec\n";
+
+const char report_bw_read_enhanced_header[] =
+"[ ID] Interval        Transfer    Bandwidth       Reads   Dist(bin=%.1fK)\n";
+
+const char report_bw_read_enhanced_format[] =
+"[%3d] %4.2f-%4.2f sec  %ss  %ss/sec  %d    %d:%d:%d:%d:%d:%d:%d:%d\n";
+
+const char report_sum_bw_read_enhanced_format[] =
+"[SUM] %4.2f-%4.2f sec  %ss  %ss/sec  %d    %d:%d:%d:%d:%d:%d:%d:%d\n";
+
+#ifdef HAVE_STRUCT_TCP_INFO_TCPI_TOTAL_RETRANS
+const char report_bw_write_enhanced_header[] =
+"[ ID] Interval        Transfer    Bandwidth       Write/Err  Rtry    Cwnd/RTT\n";
+
+const char report_bw_write_enhanced_format[] =
+"[%3d] %4.2f-%4.2f sec  %ss  %ss/sec  %d/%d %10d %8dK/%u us\n";
+
+const char report_sum_bw_write_enhanced_format[] =
+"[SUM] %4.2f-%4.2f sec  %ss  %ss/sec  %d/%d%10d\n";
+
+#else
+const char report_bw_write_enhanced_header[] =
+"[ ID] Interval        Transfer    Bandwidth       Write/Err\n";
+
+const char report_bw_write_enhanced_format[] =
+"[%3d] %4.2f-%4.2f sec  %ss  %ss/sec  %d/%d\n";
+
+const char report_sum_bw_write_enhanced_format[] =
+"[SUM] %4.2f-%4.2f sec  %ss  %ss/sec  %d/%d\n";
+#endif
+
+const char report_bw_pps_enhanced_header[] =
+"[ ID] Interval       Transfer     Bandwidth      PPS\n";
+
+const char report_bw_pps_enhanced_format[] =
+"[%3d] %4.2f-%4.2f sec  %ss  %ss/sec %4.0f pps\n";
+
+const char report_sum_bw_pps_enhanced_format[] =
+"[SUM] %4.2f-%4.2f sec  %ss  %ss/sec %4.0f pps\n";
+
+const char report_bw_jitter_loss_enhanced_header[] =
+"[ ID] Interval       Transfer     Bandwidth        Jitter   Lost/Total \
+ Latency avg/min/max/stdev PPS\n";
+
+const char report_bw_jitter_loss_enhanced_format[] =
+"[%3d] %4.2f-%4.2f sec  %ss  %ss/sec  %6.3f ms %4d/%5d (%.2g%%) %6.3f/%6.3f/%6.3f/%6.3f ms %4.0f pps\n";
+
+const char report_sum_bw_jitter_loss_enhanced_format[] =
+"[SUM] %4.2f-%4.2f sec  %ss  %ss/sec  %6.3f ms %4d/%5d (%.2g%%)  %4.0f pps\n";
+
+const char report_bw_jitter_loss_suppress_enhanced_format[] =
+"[%3d] %4.2f-%4.2f sec  %ss  %ss/sec  %6.3f ms %4d/%5d (%.2g%%) -/-/-/- ms %4.0f pps\n";
+
+/* -------------------------------------------------------------------
+ * Misc reports
+ * ------------------------------------------------------------------- */
 const char report_outoforder[] =
-"[%3d] %4.1f-%4.1f sec  %d datagrams received out-of-order\n";
+"[%3d] %4.2f-%4.2f sec  %d datagrams received out-of-order\n";
 
 const char report_sum_outoforder[] =
-"[SUM] %4.1f-%4.1f sec  %d datagrams received out-of-order\n";
+"[SUM] %4.2f-%4.2f sec  %d datagrams received out-of-order\n";
 
 const char report_peer[] =
 "[%3d] local %s port %u connected with %s port %u\n";
@@ -301,7 +371,7 @@ const char opt_estimate[]=
 "Optimal Estimate\n";
 
 const char report_interval_small[] =
-"WARNING: interval too small, increasing from %3.2f to 0.5 seconds.\n";
+"WARNING: interval too small, increasing from %3.3f to 5 milliseconds.\n";
 
 const char warn_invalid_server_option[] =
 "WARNING: option -%c is not valid for server mode\n";

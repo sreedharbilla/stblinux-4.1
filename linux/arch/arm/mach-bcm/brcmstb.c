@@ -21,7 +21,6 @@
 #include <linux/clocksource.h>
 #include <linux/console.h>
 #include <linux/of_address.h>
-#include <linux/soc/brcmstb/brcmstb.h>
 #include <asm/mach/map.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -46,7 +45,6 @@ static void __init brcmstb_init_irq(void)
 {
 	gic_set_irqchip_flags(IRQCHIP_MASK_ON_SUSPEND);
 	irqchip_init();
-	brcmstb_biuctrl_init();
 }
 
 static const char *const brcmstb_match[] __initconst = {

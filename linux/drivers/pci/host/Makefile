@@ -15,4 +15,8 @@ obj-$(CONFIG_PCI_LAYERSCAPE) += pci-layerscape.o
 obj-$(CONFIG_PCI_VERSATILE) += pci-versatile.o
 obj-$(CONFIG_PCIE_IPROC) += pcie-iproc.o
 obj-$(CONFIG_PCIE_IPROC_PLATFORM) += pcie-iproc-platform.o
-obj-$(CONFIG_PCIE_BRCMSTB) += pci-brcmstb.o
+obj-$(CONFIG_PCIE_BRCMSTB) += pci_brcmstb.o
+pci_brcmstb-objs += pci-brcmstb.o pci-dma-brcmstb.o
+ifdef CONFIG_PCI_MSI
+	pci_brcmstb-objs += pci-msi-brcmstb.o
+endif

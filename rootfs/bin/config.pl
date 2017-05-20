@@ -88,9 +88,9 @@ sub read_cfg($$)
 
 	open(F, "<${file}") or die "can't open ${file}: $!";
 	while(<F>) {
-		if(m/^# (\S+) is not set/) {
+		if (m/^# (\S+) is not set/) {
 			$$h{$1} = "n";
-		} elsif(m/^(\w+)=(.+)$/) {
+		} elsif (m/^(\w+)=(.+)$/) {
 			$$h{$1} = $2;
 		}
 	}
@@ -105,12 +105,12 @@ sub write_cfg_common($$$$)
 	open(IN, "<${in}") or die "can't open ${in}: $!";
 
 	while(<IN>) {
-		if(m/^# (\S+) is not set/ || m/^(\w+)=(.+)$/) {
+		if (m/^# (\S+) is not set/ || m/^(\w+)=(.+)$/) {
 			my $var = $1;
 			my $val = $$h{$var};
 
-			if(defined($val)) {
-				if($disable_n && $val eq "n") {
+			if (defined($val)) {
+				if ($disable_n && $val eq "n") {
 					push(@outbuf, "# $var is not set\n");
 				} else {
 					push(@outbuf, "${var}=${val}\n");
@@ -138,7 +138,7 @@ sub write_cfg_common($$$$)
 	foreach my $var (sort { $a cmp $b } keys(%$h)) {
 		my $val = $$h{$var};
 
-		if(! defined($val)) {
+		if (! defined($val)) {
 			next;
 		}
 		print OUT "${var}=${val}\n";
@@ -163,13 +163,13 @@ sub whitelist_cfg($$)
 	my($cfg, $whitelist) = @_;
 
 	foreach my $x (keys(%$cfg)) {
-		if(defined($$cfg{$x})) {
-			if($$cfg{$x} eq "y") {
-				if(! defined($$whitelist{$x})) {
+		if (defined($$cfg{$x})) {
+			if ($$cfg{$x} eq "y") {
+				if (! defined($$whitelist{$x})) {
 					$$cfg{$x} = "n";
 				}
-			} elsif($$cfg{$x} eq "n") {
-				if(defined($$whitelist{$x}) &&
+			} elsif ($$cfg{$x} eq "n") {
+				if (defined($$whitelist{$x}) &&
 						$$whitelist{$x} eq "y") {
 					$$cfg{$x} = "y";
 				}
@@ -180,7 +180,7 @@ sub whitelist_cfg($$)
 	foreach my $var (sort { $a cmp $b } keys(%$whitelist)) {
 		my $val = $$whitelist{$var};
 
-		if(defined($val)) {
+		if (defined($val)) {
 			$$cfg{$var} = $val;
 		}
 	}
@@ -191,7 +191,7 @@ sub override_cfg($$)
 	my($cfg, $newcfg) = @_;
 
 	foreach my $x (keys(%$cfg)) {
-		if(defined($$cfg{$x}) && defined($$newcfg{$x})) {
+		if (defined($$cfg{$x}) && defined($$newcfg{$x})) {
 			$$cfg{$x} = $$newcfg{$x};
 			$$newcfg{$x} = undef;
 		}
@@ -199,7 +199,7 @@ sub override_cfg($$)
 	foreach my $var (sort { $a cmp $b } keys(%$newcfg)) {
 		my $val = $$newcfg{$var};
 
-		if(defined($val)) {
+		if (defined($val)) {
 			$$cfg{$var} = $val;
 		}
 	}
@@ -209,7 +209,7 @@ sub def($$$)
 {
 	my($cfg, $name, $val) = @_;
 
-	if(! defined($$cfg{$name})) {
+	if (! defined($$cfg{$name})) {
 		$$cfg{$name} = $val;
 	}
 }
@@ -224,7 +224,7 @@ sub get_tgt($$)
 
 	($tgt, $linux_full_version) = (@_);
 
-	if(! defined($tgt)) {
+	if (! defined($tgt)) {
 		die "no target specified";
 	}
 
@@ -276,21 +276,21 @@ sub populate_linux_defaults($$)
 	# However, it doesn't look like that's actually happening.  Until it
 	# does, we can assume that anything that has an entry under
 	# include/linux/brcmstb is ARM.
-	if($chip eq "arm64") {
+	if ($chip eq "arm64") {
 		if (grep(/^hardened$/, @mods)) {
 			$linux_defaults =~ s/defconfig$/hardened_defconfig/;
 		}
 		$arch_config_options{"ARCH"} = "arm64";
 		$linux_defaults = "$LINUXDIR/arch/".$arch_config_options{"ARCH"}."/configs/brcmstb_defconfig";
 		$linux_new_defaults = "$LINUXDIR/arch/".$arch_config_options{"ARCH"}."/configs/brcmstb_new_defconfig";
-	} elsif($chip eq "arm") {
+	} elsif ($chip eq "arm") {
 		if (grep(/^hardened$/, @mods)) {
 			$linux_defaults =~ s/defconfig$/hardened_defconfig/;
 		}
 		$arch_config_options{"ARCH"} = "arm";
 		$linux_defaults = "$LINUXDIR/arch/".$arch_config_options{"ARCH"}."/configs/brcmstb_defconfig";
 		$linux_new_defaults = "$LINUXDIR/arch/".$arch_config_options{"ARCH"}."/configs/brcmstb_new_defconfig";
-	} elsif($chip eq "probe") {
+	} elsif ($chip eq "probe") {
 		$linux_defaults= "$LINUXDIR/arch/mips/configs/bcmejtag_defconfig";
 		$arch_config_options{"ARCH"} = "mips";
 	} elsif ($chip ne "bmips") {
@@ -303,7 +303,7 @@ sub populate_linux_defaults($$)
 			} else {
 				$arch_config_options{"ARCH"} = "arm64";
 			}
-		} elsif(-e "$LINUXDIR/arch/mips/configs/bcm".$chip."_defconfig") {
+		} elsif (-e "$LINUXDIR/arch/mips/configs/bcm".$chip."_defconfig") {
 			$linux_defaults = "$LINUXDIR/arch/mips/configs/bcm".$chip."_defconfig";
 			$linux_new_defaults = "$LINUXDIR/arch/mips/configs/bcm".$chip."_new_defconfig";
 			$arch_config_options{"ARCH"} = "mips";
@@ -315,7 +315,7 @@ sub populate_linux_defaults($$)
 			$linux_defaults = "$LINUXDIR/arch/".$arch_config_options{"ARCH"}."/configs/brcmstb_defconfig";
 			$linux_new_defaults = "$LINUXDIR/arch/".$arch_config_options{"ARCH"}."/configs/brcmstb_new_defconfig";
 		}
-	} elsif(-e "$LINUXDIR/arch/mips/configs/".$chip."_stb_defconfig") {
+	} elsif (-e "$LINUXDIR/arch/mips/configs/".$chip."_stb_defconfig") {
 		$linux_defaults = "$LINUXDIR/arch/mips/configs/bmips_stb_defconfig";
 		$arch_config_options{"ARCH"} = "mips";
 	} else {
@@ -402,11 +402,11 @@ sub gen_modifiers($$)
 	# set default modifiers for each chip
 
 	my $shortchip = $chip;
-	if($shortchip =~ /^\d{3,}/) {
+	if ($shortchip =~ /^\d{3,}/) {
 		$shortchip =~ s/[^\d].*//;
 	}
 
-	if(defined($defsuf{$shortchip})) {
+	if (defined($defsuf{$shortchip})) {
 		$suffix = $defsuf{$shortchip}.$suffix;
 	}
 
@@ -428,7 +428,7 @@ sub gen_modifiers($$)
 
 	# allow stacking more than one modifier (e.g. -small-nohdd-nousb)
 	while(defined($suffix) && ($suffix ne "")) {
-		if($suffix !~ m/^-([^-]+)(-\S+)?/) {
+		if ($suffix !~ m/^-([^-]+)(-\S+)?/) {
 			print "\n";
 			print "ERROR: Invalid modifier '$suffix' in '$tgt'\n";
 			print "\n";
@@ -448,7 +448,7 @@ sub get_chiplist()
 	my @out = ( );
 
 	foreach (@defs) {
-		if(m/([0-9]+[a-z][0-9])/) {
+		if (m/([0-9]+[a-z][0-9])/) {
 			push(@out, $1);
 		}
 	}
@@ -464,12 +464,12 @@ sub set_opt_common($$)
 	read_cfg($file, \%h);
 
 	foreach my $x (@$settings) {
-		if($x !~ /^(\w+)=(.+)$/) {
+		if ($x !~ /^(\w+)=(.+)$/) {
 			die "Invalid setting: $x";
 		}
 		my($key, $val) = ($1, $2);
-		if(defined($h{$key})) {
-			if($h{$key} eq $val) {
+		if (defined($h{$key})) {
+			if ($h{$key} eq $val) {
 				print "$key: no change\n";
 			} else {
 				print "$key: change from '$h{$key}' to ".
@@ -504,7 +504,7 @@ sub test_opt($$)
 	read_cfg($file, \%h);
 
 	foreach my $key (@$settings) {
-		if(!defined($h{$key}) || ($h{$key} eq 'n')) {
+		if (!defined($h{$key}) || ($h{$key} eq 'n')) {
 			$result = 1;
 		}
 	}
@@ -519,7 +519,7 @@ sub gen_arch_config($$)
 	my $out = "";
 
 	# overrides based on endian/arch setting
-	if($be == 0) {
+	if ($be == 0) {
 		if ($arch eq "arm64") {
 			$arch_config_options{"MACHINE"} = "aarch64";
 		} elsif ($arch eq "arm") {
@@ -537,14 +537,14 @@ sub gen_arch_config($$)
 		}
 	}
 	$arch_config_options{"CROSS_COMPILE"} = qq($arch_config_options{"MACHINE"}-linux-);
-	if($arch_config_options{"LIBCDIR"} eq "uClibc") {
-		if($arch eq "arm") {
+	if ($arch_config_options{"LIBCDIR"} eq "uClibc") {
+		if ($arch eq "arm") {
 			$arch_config_options{"CROSS_COMPILE"} .= "uclibceabi-";
 		} else {
 			$arch_config_options{"CROSS_COMPILE"} .= "uclibc-"
 		}
 	} else {  # (e)glibc
-		if($arch eq "arm") {
+		if ($arch eq "arm") {
 			$arch_config_options{"CROSS_COMPILE"} .= "gnueabihf-";
 		} else {
 			$arch_config_options{"CROSS_COMPILE"} .= "gnu-";
@@ -593,13 +593,13 @@ sub cmd_defaults($)
 
 	# clean up the build system if switching targets
 	# "quick" mode (skip distclean) is for testing only
-	if(-e ".target" && $cmd ne "quickdefaults") {
+	if (-e ".target" && $cmd ne "quickdefaults") {
 		open(F, "<.target") or die "can't read .target";
 		my $oldtgt = <F>;
 		close(F);
 
 		$oldtgt =~ s/[\r\n]//g;
-		if($tgt ne $oldtgt) {
+		if ($tgt ne $oldtgt) {
 			print "\n";
 			print "Switching from target $oldtgt to $tgt\n";
 			print "\n";
@@ -694,7 +694,7 @@ sub cmd_defaults($)
 	foreach (@mods) {
 		my $mod = $_;
 
-		if($mod eq "small") {
+		if ($mod eq "small") {
 
 			# reduced footprint (-small builds)
 
@@ -715,7 +715,7 @@ sub cmd_defaults($)
 			$linux{"CONFIG_NETWORK_FILESYSTEMS"} = "n";
 			$linux{"CONFIG_INPUT"} = "n";
 			$linux{"CONFIG_VT"} = "n";
-		} elsif($mod eq "ikos") {
+		} elsif ($mod eq "ikos") {
 
 			# IKOS pre-tapeout emulation (internal Broadcom use)
 			# 'ikos' implies '-small-kdebug-nousb-nomtd-nohdd'
@@ -727,7 +727,7 @@ sub cmd_defaults($)
 			$linux{"CONFIG_BRCM_FORCED_DRAM1_SIZE"} = "0";
 			$linux{"CONFIG_BRCM_PM"} = "n";
 			$vendor{"CONFIG_USER_BRCM_PM"} = "n";
-		} elsif($mod eq "kgdb") {
+		} elsif ($mod eq "kgdb") {
 
 			# KGDB debugging (implies -kdebug)
 			# 'kgdb' implies '-kdebug'
@@ -737,12 +737,12 @@ sub cmd_defaults($)
 			$linux{"CONFIG_KGDB_TESTS"} = "n";
 			$linux{"CONFIG_KGDB_LOW_LEVEL_TRAP"} = "n";
 			$linux{"CONFIG_KGDB_KDB"} = "n";
-		} elsif($mod eq "gdb") {
+		} elsif ($mod eq "gdb") {
 
 			# Native GDB CLI on target (warning: GPLv3 code)
 
 			$vendor{"CONFIG_USER_GDB_GDB"} = "y";
-		} elsif($mod eq "opf") {
+		} elsif ($mod eq "opf") {
 
 			# Oprofile - non-debug kernel with CONFIG_OPROFILE set
 
@@ -755,7 +755,7 @@ sub cmd_defaults($)
 			$linux{"CONFIG_RING_BUFFER_BENCHMARK"} = "n";
 
 			$vendor{"CONFIG_USER_PROFILE_OPROFILE"} = "y";
-		} elsif($mod eq "kdebug") {
+		} elsif ($mod eq "kdebug") {
 
 			# Kernel debug info + extra sanity checks
 
@@ -763,7 +763,7 @@ sub cmd_defaults($)
 			override_cfg(\%linux, \%linux_o);
 			def(\%linux, "CONFIG_BRCM_IKOS", "n");
 			def(\%linux, "CONFIG_KGDB", "n");
-		} elsif($mod eq "netfilter") {
+		} elsif ($mod eq "netfilter") {
 
 			# Enable netfilter and iptables
 
@@ -771,7 +771,7 @@ sub cmd_defaults($)
 				\%linux_o);
 			override_cfg(\%linux, \%linux_o);
 			$vendor{"CONFIG_USER_IPTABLES_IPTABLES"} = "y";
-		} elsif($mod eq "ipv6") {
+		} elsif ($mod eq "ipv6") {
 
 			# Enable IPv6
 
@@ -787,20 +787,20 @@ sub cmd_defaults($)
 			$busybox{"CONFIG_FEATURE_IPV6"} = "y";
 			$busybox{"CONFIG_PING6"} = "y";
 			$busybox{"CONFIG_UDHCPC6"} = "y";
-		} elsif($mod eq "docsis") {
+		} elsif ($mod eq "docsis") {
 
 			# enable tftp server for DOCSIS firmware download
 
 			$busybox{"CONFIG_UDPSVD"} = "y";
 			$busybox{"CONFIG_TFTPD"} = "y";
-		} elsif($mod eq "nousb") {
+		} elsif ($mod eq "nousb") {
 			$linux{"CONFIG_USB"} = "n";
-		} elsif($mod eq "nomtd") {
+		} elsif ($mod eq "nomtd") {
 			$vendor{"CONFIG_USER_MTDUTILS"} = "n";
 			$linux{"CONFIG_MTD"} = "n";
 			# JFFS2, UBIFS depend on CONFIG_MTD
 			$linux{"CONFIG_SQUASHFS"} = "n";
-		} elsif($mod eq "nohdd") {
+		} elsif ($mod eq "nohdd") {
 
 			# Disable all hard disk support (SATA or USB)
 
@@ -825,7 +825,7 @@ sub cmd_defaults($)
 			$linux{"CONFIG_VFAT_FS"} = "n";
 			$linux{"CONFIG_MSDOS_FS"} = "n";
 			$linux{"CONFIG_NLS"} = "n";
-		} elsif($mod eq "nonet") {
+		} elsif ($mod eq "nonet") {
 			# busybox compile fails with no brctl
 			# $busybox{"CONFIG_BRCTL"} = "n";
 			$busybox{"CONFIG_FTPGET"} = "n";
@@ -848,10 +848,10 @@ sub cmd_defaults($)
 			$vendor{"CONFIG_USER_MOCA_NONE"} = "y";
 			$vendor{"CONFIG_USER_MOCA_MOCA1"} = "n";
 			$vendor{"CONFIG_USER_MOCA_MOCA2"} = "n";
-		} elsif($mod eq "nonetfilter") {
+		} elsif ($mod eq "nonetfilter") {
 			$linux{"CONFIG_NETFILTER"} = "n";
 			$vendor{"CONFIG_USER_IPTABLES_IPTABLES"} = "n";
-		} elsif($mod eq "lttng") {
+		} elsif ($mod eq "lttng") {
 
 			# Enable LTTng
 
@@ -864,7 +864,7 @@ sub cmd_defaults($)
 
 			$busybox{"CONFIG_FEATURE_FIND_PRUNE"} = "y";
 			$busybox{"CONFIG_FEATURE_FIND_PATH"} = "y";
-		} elsif($mod eq "android") {
+		} elsif ($mod eq "android") {
 
 			# Enable Android
 			if (! -e "$LINUXDIR/Documentation/android.txt") {
@@ -873,12 +873,12 @@ sub cmd_defaults($)
 				die("");
 			}
 
-		} elsif($mod eq "newubi") {
+		} elsif ($mod eq "newubi") {
 
 			# UBI/UBIFS backport from the mainline MTD tree
 
 			$use_patch{'newubi'} = 1;
-		} elsif($mod eq "lxc") {
+		} elsif ($mod eq "lxc") {
 
 			# Enable LXC containers
 
@@ -891,13 +891,13 @@ sub cmd_defaults($)
 			$busybox{"CONFIG_GETOPT"} = "y";
 			$busybox{"CONFIG_FEATURE_GETOPT_LONG"} = "y";
 			$busybox{"CONFIG_ID"} = "y";
-		} elsif($mod eq "uvc") {
+		} elsif ($mod eq "uvc") {
 
 			# Enable UVC - USB Video Class
 
 			read_cfg("defaults/override.linux-uvc", \%linux_o);
 			override_cfg(\%linux, \%linux_o);
-		} elsif($mod eq "xfs") {
+		} elsif ($mod eq "xfs") {
 
 			# Enable XFS file system
 
@@ -907,7 +907,7 @@ sub cmd_defaults($)
 			$linux{"CONFIG_XFS_RT"} = "y";
 			$linux{"CONFIG_XFS_DEBUG"} = "n";
 			$vendor{"CONFIG_USER_XFS_XFSPROGS"} = "y";
-		} elsif($mod eq "perf") {
+		} elsif ($mod eq "perf") {
 
 			# perf - performance counters and function tracer
 
@@ -927,13 +927,13 @@ sub cmd_defaults($)
 			$vendor{"CONFIG_USER_PERF"} = "y";
 
 			$busybox{"CONFIG_EXPAND"} = "y";
-		} elsif($mod eq "eglibc") {
+		} elsif ($mod eq "eglibc") {
 			$arch_config_options{"LIBCDIR"} = "eglibc";
-		} elsif($mod eq "uclibc" || $mod eq "uClibc") {
+		} elsif ($mod eq "uclibc" || $mod eq "uClibc") {
 			$arch_config_options{"LIBCDIR"} = "uClibc";
-		} elsif($mod eq "hardened") {
+		} elsif ($mod eq "hardened") {
 			# this is just a defconfig select for now; do nothing.
-		} elsif($mod eq "32") {
+		} elsif ($mod eq "32") {
 			# this is just an ARCH modifier for now; do nothing.
 		} else {
 			print "\n";
@@ -945,7 +945,7 @@ sub cmd_defaults($)
 
 	# overrides based on endian/arch setting
 
-	if($be == 0) {
+	if ($be == 0) {
 		$linux{"CONFIG_CPU_LITTLE_ENDIAN"} = "y";
 		$linux{"CONFIG_CPU_BIG_ENDIAN"} = "n";
 
@@ -982,7 +982,7 @@ sub cmd_defaults($)
 
 	my $CC = qq($arch_config_options{"CROSS_COMPILE"}gcc);
 	my $sysroot = `$CC --print-sysroot`;
-	if(WEXITSTATUS($?) != 0) {
+	if (WEXITSTATUS($?) != 0) {
 		die "can't invoke $CC to find sysroot (bad toolchain in PATH?)";
 	}
 	$sysroot =~ s/\s//g;
@@ -1002,23 +1002,23 @@ sub cmd_defaults($)
 	chdir($LINUXDIR) or die;
 
 	foreach my $x (@patchlist) {
-		if(defined($use_patch{$x})) {
-			if(! -e "patch/.applied-$x") {
+		if (defined($use_patch{$x})) {
+			if (! -e "patch/.applied-$x") {
 				system("patch -p2 < patch/$x.patch");
 
 				my $ret = WEXITSTATUS($?);
-				if($ret != 0) {
+				if ($ret != 0) {
 					die "patch exited with code $ret";
 				}
 				open(F, ">patch/.applied-$x") or die;
 				close(F);
 			}
 		} else {
-			if(-e "patch/.applied-$x") {
+			if (-e "patch/.applied-$x") {
 				system("patch -R -p2 < patch/$x.patch");
 
 				my $ret = WEXITSTATUS($?);
-				if($ret != 0) {
+				if ($ret != 0) {
 					die "patch exited with code $ret";
 				}
 				unlink("patch/.applied-$x") or die;
@@ -1091,6 +1091,7 @@ sub cmd_initramfs()
 	$linux{"CONFIG_INITRAMFS_COMPRESSION_GZIP"} = "n";
 	$linux{"CONFIG_INITRAMFS_COMPRESSION_BZIP2"} = "n";
 	$linux{"CONFIG_INITRAMFS_COMPRESSION_LZMA"} = "n";
+	$linux{"CONFIG_INITRAMFS_COMPRESSION_LZ4"} = "n";
 	$linux{"CONFIG_INITRAMFS_COMPRESSION_LZO"} = "n";
 	$linux{"CONFIG_INITRAMFS_COMPRESSION_XZ"} = "n";
 
@@ -1117,7 +1118,7 @@ sub cmd_buildlist()
 		print "$_\n";
 		# 73xx, 74xx generally need BE builds
 		# 70xx, 71xx, 72xx generally do not
-		if(m/^7[34]/ || m/^7038/) {
+		if (m/^7[34]/ || m/^7038/) {
 			print "${_}_be\n";
 		}
 	}
@@ -1192,7 +1193,7 @@ my %cmd_table = (
 #
 
 my $cmd = shift @ARGV;
-if(! defined($cmd)) {
+if (! defined($cmd)) {
 	die "usage: config.pl <cmd>\n";
 }
 ($cmd_table{$cmd} || \&cmd_badcmd)->($cmd);

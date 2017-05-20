@@ -34,6 +34,9 @@ ENTRY(brcmstb_pm_do_s2)
 	/* Flush memory transactions */
 	dsb	sy
 
+	/* Cache DDR_PHY_STATUS_REG translation */
+	ldr	w2, [DDR_PHY_STATUS_REG]
+
 	/* power down request */
 	ldr	w3, =PM_S2_COMMAND
 

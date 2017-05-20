@@ -33,3 +33,5 @@ user/e2fsprogs/misc/e2undo.8
 user/e2fsprogs/misc/uuidd
 user/e2fsprogs/misc/uuidd.8
 user/e2fsprogs/public_config.h
+
+release/

@@ -124,9 +124,9 @@ int main( int argc, char **argv ) {
     // Set SIGTERM and SIGINT to call our user interrupt function
     my_signal( SIGTERM, Sig_Interupt );
     my_signal( SIGINT,  Sig_Interupt );
+#ifndef WIN32
     my_signal( SIGALRM,  Sig_Interupt );
 
-#ifndef WIN32
     // Ignore broken pipes
     signal(SIGPIPE,SIG_IGN);
 #else
@@ -171,8 +171,6 @@ int main( int argc, char **argv ) {
          || ext_gSettings->mThreadMode == kMode_Listener ) {
 #ifdef WIN32
         // Start the server as a daemon
-        // Daemon mode for non-windows in handled
-        // in the listener_spawn function
         if ( isDaemon( ext_gSettings ) ) {
             CmdInstallService(argc, argv);
             return 0;
@@ -183,10 +181,20 @@ int main( int argc, char **argv ) {
             // remove the service
             if ( CmdRemoveService() ) {
                 fprintf(stderr, "IPerf Service is removed.\n");
-
                 return 0;
             }
         }
+#else
+	if ( isDaemon( ext_gSettings ) ) {
+	    if (daemon(1, 1) < 0) {
+	        perror("daemon");
+	    }
+	    fprintf( stderr, "Running Iperf Server as a daemon\n"); 
+	    fprintf( stderr, "The Iperf daemon process ID : %d\n",((int)getpid())); 
+	    fclose(stdout);
+	    fclose(stderr); 
+	    fclose(stdin); 
+	}
 #endif
         // initialize client(s)
         if ( ext_gSettings->mThreadMode == kMode_Client ) {
@@ -221,15 +229,13 @@ int main( int argc, char **argv ) {
         // you must call iperf with "iperf -D" or using the environment variable
         SERVICE_TABLE_ENTRY dispatchTable[] =
         {
-            { TEXT(SZSERVICENAME), (LPSERVICE_MAIN_FUNCTION)service_main},
+            { (LPSTR)TEXT(SZSERVICENAME), (LPSERVICE_MAIN_FUNCTION)service_main},
             { NULL, NULL}
         };
 
-        // Only attempt to start the service if "-D" was specified
-        if ( !isDaemon(ext_gSettings) ||
-             // starting the service by SCM, there is no arguments will be passed in.
-             // the arguments will pass into Service_Main entry.
-             !StartServiceCtrlDispatcher(dispatchTable) )
+	// starting the service by SCM, there is no arguments will be passed in.
+	// the arguments will pass into Service_Main entry.
+        if (!StartServiceCtrlDispatcher(dispatchTable) )
             // If the service failed to start then print usage
 #endif
         fprintf( stderr, usage_short, argv[0], argv[0] );
@@ -259,13 +265,16 @@ void Sig_Interupt( int inSigno ) {
     } else if ( thread_equalid( sThread, thread_getid() ) ) {
         sig_exit( inSigno );
     }
-
     // global variable used by threads to see if they were interrupted
-    sInterupted = 1;
+    sInterupted = inSigno;
 
-    // with threads, stop waiting for non-terminating threads
-    // (ie Listener Thread)
-    thread_release_nonterm( 1 );
+    // Note:  ignore alarms per setitimer
+#if HAVE_DECL_SIGALRM
+    if (inSigno != SIGALRM) 
+#endif
+	// with threads, stop waiting for non-terminating threads
+	// (ie Listener Thread) 
+	thread_release_nonterm( inSigno );
 
 #else
     // without threads, just exit quietly, same as sig_exit()
@@ -289,6 +298,120 @@ void cleanup( void ) {
     // shutdown the thread subsystem
     thread_destroy( );
 } // end cleanup
+
+#ifdef WIN32
+/*--------------------------------------------------------------------
+ * ServiceStart
+ *
+ * each time starting the service, this is the entry point of the service.
+ * Start the service, certainly it is on server-mode
+ * 
+ *-------------------------------------------------------------------- */
+VOID ServiceStart (DWORD dwArgc, LPTSTR *lpszArgv) {
+    thread_Settings* ext_gSettings;
+ 
+    // report the status to the service control manager.
+    //
+    if ( !ReportStatusToSCMgr(
+                             SERVICE_START_PENDING, // service state
+                             NO_ERROR,              // exit code
+                             3000) )                 // wait hint
+        goto clean;
+
+    ext_gSettings = new thread_Settings;
+
+    // Initialize settings to defaults
+    Settings_Initialize( ext_gSettings );
+    // read settings from environment variables
+    Settings_ParseEnvironment( ext_gSettings );
+    // read settings from command-line parameters
+    Settings_ParseCommandLine( dwArgc, lpszArgv, ext_gSettings );
+
+    // Arguments will be lost when the service is started by SCM, but
+    // we need to be at least a listener
+    ext_gSettings->mThreadMode = kMode_Listener;
+
+    // report the status to the service control manager.
+    //
+    if ( !ReportStatusToSCMgr(
+                             SERVICE_START_PENDING, // service state
+                             NO_ERROR,              // exit code
+                             3000) )                 // wait hint
+        goto clean;
+
+    // if needed, redirect the output into a specified file
+    if ( !isSTDOUT( ext_gSettings ) ) {
+        redirect( ext_gSettings->mOutputFileName );
+    }
+
+    // report the status to the service control manager.
+    //
+    if ( !ReportStatusToSCMgr(
+                             SERVICE_START_PENDING, // service state
+                             NO_ERROR,              // exit code
+                             3000) )                 // wait hint
+        goto clean;
+    
+    // initialize client(s)
+    if ( ext_gSettings->mThreadMode == kMode_Client ) {
+        client_init( ext_gSettings );
+    }
+
+    // start up the reporter and client(s) or listener
+    {
+        thread_Settings *into = NULL;
+#ifdef HAVE_THREAD
+        Settings_Copy( ext_gSettings, &into );
+        into->mThreadMode = kMode_Reporter;
+        into->runNow = ext_gSettings;
+#else
+        into = ext_gSettings;
+#endif
+        thread_start( into );
+    }
+    
+    // report the status to the service control manager.
+    //
+    if ( !ReportStatusToSCMgr(
+                             SERVICE_RUNNING,       // service state
+                             NO_ERROR,              // exit code
+                             0) )                    // wait hint
+        goto clean;
+
+    clean:
+    // wait for other (client, server) threads to complete
+    thread_joinall();
+}
+
+
+//
+//  FUNCTION: ServiceStop
+//
+//  PURPOSE: Stops the service
+//
+//  PARAMETERS:
+//    none
+//
+//  RETURN VALUE:
+//    none
+//
+//  COMMENTS:
+//    If a ServiceStop procedure is going to
+//    take longer than 3 seconds to execute,
+//    it should spawn a thread to execute the
+//    stop code, and return.  Otherwise, the
+//    ServiceControlManager will believe that
+//    the service has stopped responding.
+//    
+VOID ServiceStop() {
+#ifdef HAVE_THREAD
+    Sig_Interupt( 1 );
+#else
+    sig_exit(1);
+#endif
+}
+
+#endif
 
 
 

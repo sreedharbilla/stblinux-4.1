@@ -9,6 +9,7 @@
  * %End-Header%
  */
 
+#include "config.h"
 #include <errno.h>
 
 #include "e2fsck.h"
@@ -88,9 +89,7 @@ errcode_t e2fsck_reset_context(e2fsck_t ctx)
 		ctx->fs->dblist = 0;
 	}
 	e2fsck_free_dir_info(ctx);
-#ifdef ENABLE_HTREE
 	e2fsck_free_dx_dir_info(ctx);
-#endif
 	if (ctx->refcount) {
 		ea_refcount_free(ctx->refcount);
 		ctx->refcount = 0;
@@ -106,6 +105,10 @@ errcode_t e2fsck_reset_context(e2fsck_t ctx)
 	if (ctx->block_ea_map) {
 		ext2fs_free_block_bitmap(ctx->block_ea_map);
 		ctx->block_ea_map = 0;
+	}
+	if (ctx->block_metadata_map) {
+		ext2fs_free_block_bitmap(ctx->block_metadata_map);
+		ctx->block_metadata_map = 0;
 	}
 	if (ctx->inode_bb_map) {
 		ext2fs_free_inode_bitmap(ctx->inode_bb_map);
@@ -138,6 +141,14 @@ errcode_t e2fsck_reset_context(e2fsck_t ctx)
 	if (ctx->invalid_inode_table_flag) {
 		ext2fs_free_mem(&ctx->invalid_inode_table_flag);
 		ctx->invalid_inode_table_flag = 0;
+	}
+	if (ctx->encrypted_dirs) {
+		ext2fs_u32_list_free(ctx->encrypted_dirs);
+		ctx->encrypted_dirs = 0;
+	}
+	if (ctx->inode_count) {
+		ext2fs_free_icount(ctx->inode_count);
+		ctx->inode_count = 0;
 	}
 
 	/* Clear statistic counters */
@@ -186,6 +197,9 @@ void e2fsck_free_context(e2fsck_t ctx)
 	if (ctx->device_name)
 		ext2fs_free_mem(&ctx->device_name);
 
+	if (ctx->log_fn)
+		free(ctx->log_fn);
+
 	ext2fs_free_mem(&ctx);
 }
 
@@ -195,11 +209,9 @@ void e2fsck_free_context(e2fsck_t ctx)
  */
 typedef void (*pass_t)(e2fsck_t ctx);
 
-pass_t e2fsck_passes[] = {
-	e2fsck_pass1, e2fsck_pass2, e2fsck_pass3, e2fsck_pass4,
-	e2fsck_pass5, 0 };
-
-#define E2F_FLAG_RUN_RETURN	(E2F_FLAG_SIGNAL_MASK|E2F_FLAG_RESTART)
+static pass_t e2fsck_passes[] = {
+	e2fsck_pass1, e2fsck_pass1e, e2fsck_pass2, e2fsck_pass3,
+	e2fsck_pass4, e2fsck_pass5, 0 };
 
 int e2fsck_run(e2fsck_t ctx)
 {
@@ -217,6 +229,8 @@ int e2fsck_run(e2fsck_t ctx)
 	for (i=0; (e2fsck_pass = e2fsck_passes[i]); i++) {
 		if (ctx->flags & E2F_FLAG_RUN_RETURN)
 			break;
+		if (e2fsck_mmp_update(ctx->fs))
+			fatal_error(ctx, 0);
 		e2fsck_pass(ctx);
 		if (ctx->progress)
 			(void) (ctx->progress)(ctx, 0, 0, 0);

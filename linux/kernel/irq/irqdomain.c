@@ -901,6 +901,7 @@ struct irq_data *irq_domain_get_irq_data(struct irq_domain *domain,
 
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(irq_domain_get_irq_data);
 
 /**
  * irq_domain_set_hwirq_and_chip - Set hwirq and irqchip of @virq at @domain

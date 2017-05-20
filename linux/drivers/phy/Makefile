@@ -3,7 +3,7 @@
 #
 
 
-phy-brcm-usb-dvr-objs := phy-brcm-usb.o usb-brcm-common-init.o
+phy-brcm-usb-dvr-objs := phy-brcm-usb.o phy-brcm-usb-init.o
 
 obj-$(CONFIG_GENERIC_PHY)		+= phy-core.o
 obj-$(CONFIG_PHY_BERLIN_USB)		+= phy-berlin-usb.o

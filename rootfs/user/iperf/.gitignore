@@ -20,3 +20,4 @@ src/Makefile
 src/iperf
 stamp-h1
 added
+checkdelay

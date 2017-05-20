@@ -1,4 +1,4 @@
-/*--------------------------------------------------------------- 
+/*---------------------------------------------------------------
  * Copyright (c) 1999,2000,2001,2002,2003                              
  * The Board of Trustees of the University of Illinois            
  * All Rights Reserved.                                           
@@ -17,7 +17,7 @@
  * copyright notice, this list of conditions and 
  * the following disclaimers. 
  *
- *     
+ *
  * Redistributions in binary form must reproduce the above 
  * copyright notice, this list of conditions and the following 
  * disclaimers in the documentation and/or other materials 
@@ -49,6 +49,7 @@
  *
  * ________________________________________________________________ */
 
+#include <math.h>
 #include "headers.h"
 #include "Settings.hpp"
 #include "util.h"
@@ -118,6 +119,9 @@ int reporter_handle_packet( ReportHeader *report );
 int reporter_condprintstats( ReporterData *stats, MultiHeader *multireport, int force );
 int reporter_print( ReporterData *stats, int type, int end );
 void PrintMSS( ReporterData *stats );
+#ifdef HAVE_STRUCT_TCP_INFO_TCPI_TOTAL_RETRANS
+static void gettcpistats(ReporterData *stats);
+#endif
 
 MultiHeader* InitMulti( thread_Settings *agent, int inID ) {
     MultiHeader *multihdr = NULL;
@@ -162,9 +166,19 @@ MultiHeader* InitMulti( thread_Settings *agent, int inID ) {
                 data->mode = agent->mReportMode;
                 data->info.mFormat = agent->mFormat;
                 data->info.mTTL = agent->mTTL;
+		if (data->mThreadMode == kMode_Server) 
+		    data->info.tcp.read.binsize = data->mBufLen / 8;
+                if ( isEnhanced( agent ) ) {
+		    data->info.mEnhanced = 1;
+		} else {
+		    data->info.mEnhanced = 0;
+		}
                 if ( isUDP( agent ) ) {
                     multihdr->report->info.mUDP = (char)agent->mThreadMode;
-                }
+                    multihdr->report->info.mUDP = 0;
+                } else {
+                    multihdr->report->info.mTCP = (char)agent->mThreadMode;
+		}
                 if ( isConnectionReport( agent ) ) {
                     data->type |= CONNECTION_REPORT;
                     data->connection.peer = agent->peer;
@@ -224,14 +238,12 @@ ReportHeader* InitReport( thread_Settings *agent ) {
             data = &reporthdr->report;
             reporthdr->reporterindex = NUM_REPORT_STRUCTS - 1;
             data->info.transferID = agent->mSock;
-            data->info.groupID = (agent->multihdr != NULL ? agent->multihdr->groupID 
-                                                          : -1);
+            data->info.groupID = (agent->multihdr != NULL ? agent->multihdr->groupID : -1);
             data->type = TRANSFER_REPORT;
             if ( agent->mInterval != 0.0 ) {
                 struct timeval *interval = &data->intervalTime;
                 interval->tv_sec = (long) agent->mInterval;
-                interval->tv_usec = (long) ((agent->mInterval - interval->tv_sec) 
-                                            * rMillion);
+                interval->tv_usec = (long) ((agent->mInterval - interval->tv_sec) * rMillion);
             }
             data->mHost = agent->mHost;
             data->mLocalhost = agent->mLocalhost;
@@ -243,9 +255,19 @@ ReportHeader* InitReport( thread_Settings *agent ) {
             data->mode = agent->mReportMode;
             data->info.mFormat = agent->mFormat;
             data->info.mTTL = agent->mTTL;
+	    if (data->mThreadMode == kMode_Server) 
+		data->info.tcp.read.binsize = data->mBufLen / 8;
             if ( isUDP( agent ) ) {
+		gettimeofday(&data->IPGstart, NULL);
                 reporthdr->report.info.mUDP = (char)agent->mThreadMode;
-            }
+            } else {
+                reporthdr->report.info.mTCP = (char)agent->mThreadMode;
+	    }
+	    if ( isEnhanced( agent ) ) {
+		data->info.mEnhanced = 1;
+	    } else {
+		data->info.mEnhanced = 0;
+	    }
         } else {
             FAIL(1, "Out of Memory!!\n", agent);
         }
@@ -308,6 +330,9 @@ ReportHeader* InitReport( thread_Settings *agent ) {
 #else
         // set start time
         gettimeofday( &(reporthdr->report.startTime), NULL );
+        // set next report time
+	reporthdr->report.nextTime = reporthdr->report.startTime;
+	TimeAdd( reporthdr->report.nextTime, reporthdr->report.intervalTime );
         /*
          * Process the report in this thread
          */
@@ -339,7 +364,9 @@ void ReportPacket( ReportHeader* agent, ReportStruct *packet ) {
             // item
             while ( index == 0 ) {
                 Condition_Signal( &ReportCond );
+                Condition_Lock( ReportDoneCond );
                 Condition_Wait( &ReportDoneCond );
+                Condition_Unlock( ReportDoneCond );
                 index = agent->reporterindex;
             }
             agent->agentindex = 0;
@@ -347,7 +374,9 @@ void ReportPacket( ReportHeader* agent, ReportStruct *packet ) {
         // Need to make sure that reporter is not about to be "lapped"
         while ( index - 1 == agent->agentindex ) {
             Condition_Signal( &ReportCond );
+            Condition_Lock( ReportDoneCond );
             Condition_Wait( &ReportDoneCond );
+            Condition_Unlock( ReportDoneCond );
             index = agent->reporterindex;
         }
 
@@ -370,15 +399,17 @@ void ReportPacket( ReportHeader* agent, ReportStruct *packet ) {
  * the report and signal transfer is over.
  */
 void CloseReport( ReportHeader *agent, ReportStruct *packet ) {
+    int currpktid;
     if ( agent != NULL) {
 
         /*
          * Using PacketID of -1 ends reporting
          */
+	currpktid = packet->packetID;
         packet->packetID = -1;
         packet->packetLen = 0;
         ReportPacket( agent, packet );
-        packet->packetID = agent->report.cntDatagrams;
+        packet->packetID = currpktid;
     }
 }
 
@@ -452,7 +483,8 @@ void ReportSettings( thread_Settings *agent ) {
             data->connection.size_peer = agent->size_peer;
             data->connection.local = agent->local;
             data->connection.size_local = agent->size_local;
-    
+            data->mUDPRate = agent->mUDPRate;
+            data->mUDPRateUnits = agent->mUDPRateUnits;
     #ifdef HAVE_THREAD
             /*
              * Update the ReportRoot to include this report.
@@ -509,6 +541,22 @@ void ReportServerUDP( thread_Settings *agent, server_hdr *server ) {
             stats->cntError = ntohl( server->error_cnt );
             stats->cntOutofOrder = ntohl( server->outorder_cnt );
             stats->cntDatagrams = ntohl( server->datagrams );
+            stats->transit.minTransit = ntohl( server->minTransit1 );
+            stats->transit.minTransit += ntohl( server->minTransit2 ) / (double)rMillion;
+            stats->transit.maxTransit = ntohl( server->maxTransit1 );
+            stats->transit.maxTransit += ntohl( server->maxTransit2 ) / (double)rMillion;
+            stats->transit.sumTransit = ntohl( server->sumTransit1 );
+            stats->transit.sumTransit += ntohl( server->sumTransit2 ) / (double)rMillion;
+            stats->transit.meanTransit = ntohl( server->meanTransit1 );
+            stats->transit.meanTransit += ntohl( server->meanTransit2 ) / (double)rMillion;
+            stats->transit.m2Transit = ntohl( server->m2Transit1 );
+            stats->transit.m2Transit += ntohl( server->m2Transit2 ) / (double)rMillion;
+            stats->transit.vdTransit = ntohl( server->vdTransit1 );
+            stats->transit.vdTransit += ntohl( server->vdTransit2 ) / (double)rMillion;
+            stats->transit.cntTransit = ntohl( server->cntTransit );
+            stats->IPGcnt = ntohl( server->IPGcnt );
+            stats->IPGsum = ntohl( server->IPGsum );
+
             stats->mUDP = (char)kMode_Server;
             reporthdr->report.connection.peer = agent->local;
             reporthdr->report.connection.size_peer = agent->size_local;
@@ -582,9 +630,51 @@ again:
                     goto again;
             }
             Condition_Signal( &ReportDoneCond );
-            usleep(10000);
-        } else {
-            //Condition_Unlock ( ReportCond );
+	    /* 
+	     * Suspend the reporter thread for 10 milliseconds
+	     *
+	     * This allows the thread to receive client or server threads'
+	     * packet events in "aggregates."  This can reduce context 
+	     * switching allowing for better CPU utilization, 
+	     * which is very noticble on CPU constrained systems.
+	     * 
+	     * If the realtime flag is set, then don't invoke the 
+	     * suspend.  This should give better reporter timing on 
+	     * higher end systems, where a busy-loop thread can be 
+	     * scheduled without impacting other threads.
+	     *
+	     * Note that if the reporter thread is signficantly slower 
+	     * than the Client or Server (traffic) threads this suspend 
+	     * will still be called even though the traffic threads can be 
+	     * blocked on the shared memory being full.  Probably should 
+	     * detect those and avoid the suspend under such conditions.  
+	     * It's not a big deal though because the traffic threads under  
+	     * normal conditions are much slower than the reporter thread.
+	     * The exception is when there are things like sustained 
+	     * write errors. Hence, such an optimization is deferred 
+	     * for a later date.
+	     *
+	     * Also note, a possible better implementation is for the 
+	     * reporter thread to block on a traffic thread's signal
+	     * instead of a 10 ms suspend.  That implementation 
+	     * would have to be profiled against this one to make sure
+	     * it indeed gave better performance.  Again, deferred.
+	     *
+	     * Final note, usleep() is being deprecated for nanosleep(), 
+	     * so use nanosleep if available
+	     */
+	    if ( !isRealtime( thread ) ) {
+#ifdef HAVE_NANOSLEEP 
+		{
+		    struct timespec requested;
+		    requested.tv_sec  = 0;
+		    requested.tv_nsec = 10000000L;
+		    nanosleep(&requested, NULL);
+		}
+#else 
+		usleep(10000);
+#endif
+	    }
         }
     } while ( 1 );
 }
@@ -671,52 +761,133 @@ int reporter_handle_packet( ReportHeader *reporthdr ) {
     ReporterData *data = &reporthdr->report;
     Transfer_Info *stats = &reporthdr->report.info;
     int finished = 0;
+    double usec_transit;
 
-    data->cntDatagrams++;
-    // If this is the last packet set the endTime
+    data->packetTime = packet->packetTime;
+    stats->socket = packet->socket;
     if ( packet->packetID < 0 ) {
-        data->packetTime = packet->packetTime;
         finished = 1;
         if ( reporthdr->report.mThreadMode != kMode_Client ) {
             data->TotalLen += packet->packetLen;
         }
     } else {
-        // update recieved amount and time
-        data->packetTime = packet->packetTime;
-        reporter_condprintstats( &reporthdr->report, reporthdr->multireport, finished );
-        data->TotalLen += packet->packetLen;
-        if ( packet->packetID != 0 ) {
-            // UDP packet
-            double transit;
-            double deltaTransit;
-            
-            // from RFC 1889, Real Time Protocol (RTP) 
-            // J = J + ( | D(i-1,i) | - J ) / 16 
-            transit = TimeDifference( packet->packetTime, packet->sentTime );
-            if ( data->lastTransit != 0.0 ) {
-                deltaTransit = transit - data->lastTransit;
-                if ( deltaTransit < 0.0 ) {
-                    deltaTransit = -deltaTransit;
-                }
-                stats->jitter += (deltaTransit - stats->jitter) / (16.0);
-            }
-            data->lastTransit = transit;
-    
-            // packet loss occured if the datagram numbers aren't sequential 
-            if ( packet->packetID != data->PacketID + 1 ) {
-                if ( packet->packetID < data->PacketID + 1 ) {
-                    data->cntOutofOrder++;
-                } else {
-                    data->cntError += packet->packetID - data->PacketID - 1;
-                }
-            }
-            // never decrease datagramID (e.g. if we get an out-of-order packet) 
-            if ( packet->packetID > data->PacketID ) {
-                data->PacketID = packet->packetID;
-            }
-        }
+	if (!packet->emptyreport) {
+	    // update fields common to TCP and UDP, client and server
+	    data->TotalLen += packet->packetLen;
+	    // update fields common to UDP client and server
+            if ( isUDP( data ) ) {
+		data->cntDatagrams++;
+		stats->IPGsum += TimeDifference(data->packetTime, data->IPGstart );
+		stats->IPGcnt++;
+		data->IPGstart = data->packetTime;
+		// Finally, update UDP server fields
+		if (stats->mUDP == kMode_Server) {
+		    //subsequent packets
+		    double transit;
+		    double deltaTransit;            
+		    transit = TimeDifference( packet->packetTime, packet->sentTime );
+		    // packet loss occured if the datagram numbers aren't sequential 
+		    if ( packet->packetID != data->PacketID + 1 ) {
+			if (packet->packetID < data->PacketID + 1 ) {
+			    data->cntOutofOrder++;
+			} else {
+			    data->cntError += packet->packetID - data->PacketID - 1;
+			}
+		    }
+		    // never decrease datagramID (e.g. if we get an out-of-order packet)
+		    if ( packet->packetID > data->PacketID ) {
+			data->PacketID = packet->packetID;
+		    }
+		    if (stats->transit.totcntTransit == 0) {
+			// Very first packet
+			stats->transit.minTransit = transit;
+			stats->transit.maxTransit = transit;
+			stats->transit.sumTransit = transit;
+			stats->transit.cntTransit = 1;
+			stats->transit.totminTransit = transit;
+			stats->transit.totmaxTransit = transit;
+			stats->transit.totsumTransit = transit;
+			stats->transit.totcntTransit = 1;
+			// For variance, working units is microseconds
+			usec_transit = transit * 1e6;
+			stats->transit.vdTransit = usec_transit;
+			stats->transit.meanTransit = usec_transit;
+			stats->transit.m2Transit = usec_transit * usec_transit;
+			stats->transit.totvdTransit = usec_transit;
+			stats->transit.totmeanTransit = usec_transit;
+			stats->transit.totm2Transit = usec_transit * usec_transit;
+		    } else {
+			// from RFC 1889, Real Time Protocol (RTP) 
+			// J = J + ( | D(i-1,i) | - J ) / 
+			// Compute jitter
+			deltaTransit = transit - stats->transit.lastTransit;
+			if ( deltaTransit < 0.0 ) {
+			    deltaTransit = -deltaTransit;
+			}
+			stats->jitter += (deltaTransit - stats->jitter) / (16.0);
+			// Compute end/end delay stats
+			stats->transit.sumTransit += transit;
+			stats->transit.cntTransit++;
+			stats->transit.totsumTransit += transit;
+			stats->transit.totcntTransit++;
+			// mean min max tests
+			if (transit < stats->transit.minTransit) {
+			    stats->transit.minTransit=transit;
+			}
+			if (transit < stats->transit.totminTransit) {
+			    stats->transit.totminTransit=transit;
+			}
+			if (transit > stats->transit.maxTransit) {
+			    stats->transit.maxTransit=transit;
+			}
+			if (transit > stats->transit.totmaxTransit) {
+			    stats->transit.totmaxTransit=transit;
+			}
+			// For variance, working units is microseconds
+			// variance interval
+			usec_transit = transit * 1e6;
+			stats->transit.vdTransit = usec_transit - stats->transit.meanTransit;
+			stats->transit.meanTransit = stats->transit.meanTransit + (stats->transit.vdTransit / stats->transit.cntTransit);
+			stats->transit.m2Transit = stats->transit.m2Transit + (stats->transit.vdTransit * (usec_transit - stats->transit.meanTransit));
+			// variance total
+			stats->transit.totvdTransit = usec_transit - stats->transit.totmeanTransit;
+			stats->transit.totmeanTransit = stats->transit.totmeanTransit + (stats->transit.totvdTransit / stats->transit.totcntTransit);
+			stats->transit.totm2Transit = stats->transit.totm2Transit + (stats->transit.totvdTransit * (usec_transit - stats->transit.totmeanTransit));
+		    }
+		    stats->transit.lastTransit = transit;
+		}
+	    } else if (reporthdr->report.mThreadMode == kMode_Server && (packet->packetLen > 0)) {
+		int bin;
+		// mean min max tests
+		stats->tcp.read.cntRead++;
+		stats->tcp.read.totcntRead++;
+		bin = (int)floor((packet->packetLen -1)/stats->tcp.read.binsize);
+		stats->tcp.read.bins[bin]++;
+		stats->tcp.read.totbins[bin]++;
+	    } else if (reporthdr->report.mThreadMode == kMode_Client) {
+		if (packet->errwrite) { 
+		    stats->tcp.write.WriteErr++;
+		    stats->tcp.write.totWriteErr++;
+		}
+		else { 
+		    stats->tcp.write.WriteCnt++;
+		    stats->tcp.write.totWriteCnt++;
+		}
+	    }
+	} else if ((stats->mUDP == kMode_Server) &&	\
+		   (stats->transit.cntTransit == 0)) {
+	    // This is the case when empty reports
+	    // cross the report interval boundary
+	    // Hence, set the per interval min to infinity
+	    // and the per interval max and sum to zero
+	    stats->transit.minTransit = FLT_MAX;
+	    stats->transit.maxTransit = FLT_MIN;
+	    stats->transit.sumTransit = 0;
+	    stats->transit.vdTransit = 0;
+	    stats->transit.meanTransit = 0;
+	    stats->transit.m2Transit = 0;
+	}
     }
-
     // Print a report if appropriate
     return reporter_condprintstats( &reporthdr->report, reporthdr->multireport, finished );
 }
@@ -749,16 +920,48 @@ void reporter_handle_multiple_reports( MultiHeader *reporthdr, Transfer_Info *st
                 current->cntOutofOrder = stats->cntOutofOrder;
                 current->TotalLen = stats->TotalLen;
                 current->mFormat = stats->mFormat;
+                current->mEnhanced = stats->mEnhanced;
                 current->endTime = stats->endTime;
                 current->jitter = stats->jitter;
                 current->startTime = stats->startTime;
+		current->IPGcnt = stats->IPGcnt;
+                current->startTime = stats->startTime;
+		current->IPGsum = stats->IPGsum;
+		current->mUDP = stats->mUDP;
+		current->mTCP = stats->mTCP;
+		if (stats->mTCP == kMode_Server) {
+		    int ix;
+		    current->tcp.read.cntRead = stats->tcp.read.cntRead;
+		    for (ix = 0; ix < 8; ix++) {
+			current->tcp.read.bins[ix] = stats->tcp.read.bins[ix];
+		    }
+		} else if (stats->mTCP == kMode_Client) {
+		    current->tcp.write.WriteErr = stats->tcp.write.WriteErr;
+		    current->tcp.write.WriteCnt = stats->tcp.write.WriteCnt;
+#ifdef HAVE_STRUCT_TCP_INFO_TCPI_TOTAL_RETRANS
+		    current->tcp.write.TCPretry = stats->tcp.write.TCPretry;
+#endif
+		}
                 current->free = 1;
             } else {
                 current->cntDatagrams += stats->cntDatagrams;
                 current->cntError += stats->cntError;
                 current->cntOutofOrder += stats->cntOutofOrder;
                 current->TotalLen += stats->TotalLen;
-                current->mFormat = stats->mFormat;
+		current->IPGcnt += stats->IPGcnt;
+		if (stats->mTCP == kMode_Server) {
+		    int ix;
+		    current->tcp.read.cntRead += stats->tcp.read.cntRead;
+		    for (ix = 0; ix < 8; ix++) {
+			current->tcp.read.bins[ix] += stats->tcp.read.bins[ix];
+		    }
+		} else if (stats->mTCP == kMode_Client) {
+		    current->tcp.write.WriteErr += stats->tcp.write.WriteErr;
+		    current->tcp.write.WriteCnt += stats->tcp.write.WriteCnt;
+#ifdef HAVE_STRUCT_TCP_INFO_TCPI_TOTAL_RETRANS
+		    current->tcp.write.TCPretry += stats->tcp.write.TCPretry;
+#endif
+		}
                 if ( current->endTime < stats->endTime ) {
                     current->endTime = stats->endTime;
                 }
@@ -779,23 +982,76 @@ void reporter_handle_multiple_reports( MultiHeader *reporthdr, Transfer_Info *st
     }
 }
 
+#ifdef HAVE_STRUCT_TCP_INFO_TCPI_TOTAL_RETRANS
+static void gettcpistats (ReporterData *stats) {
+    struct tcp_info tcp_internal;
+    socklen_t tcp_info_length = sizeof(struct tcp_info);
+    int retry;
+    if (stats->info.mEnhanced && stats->info.mTCP == kMode_Client) {
+	// Read the TCP retry stats for a client.  Do this
+	// on  a report interval period.
+	if (getsockopt(stats->info.socket, IPPROTO_TCP, TCP_INFO, &tcp_internal, &tcp_info_length) < 0) {
+	    WARN_errno( 1 , "getsockopt");
+	    retry = 0;
+	} else {
+	    retry = tcp_internal.tcpi_total_retrans - stats->info.tcp.write.lastTCPretry;
+	}
+	stats->info.tcp.write.TCPretry = retry;
+	stats->info.tcp.write.totTCPretry += retry;
+	stats->info.tcp.write.lastTCPretry = tcp_internal.tcpi_total_retrans;
+	stats->info.tcp.write.cwnd = tcp_internal.tcpi_snd_cwnd * tcp_internal.tcpi_snd_mss / 1024;
+	stats->info.tcp.write.rtt = tcp_internal.tcpi_rtt;
+    } 
+}
+#endif
 /*
  * Prints reports conditionally
  */
 int reporter_condprintstats( ReporterData *stats, MultiHeader *multireport, int force ) {
-    if ( force != 0 ) {
+
+    if ( force ) {
+#ifdef HAVE_STRUCT_TCP_INFO_TCPI_TOTAL_RETRANS
+	gettcpistats(stats);
+#endif
         stats->info.cntOutofOrder = stats->cntOutofOrder;
         // assume most of the time out-of-order packets are not
         // duplicate packets, so conditionally subtract them from the lost packets.
         stats->info.cntError = stats->cntError;
-        if ( stats->info.cntError > stats->info.cntOutofOrder ) {
-            stats->info.cntError -= stats->info.cntOutofOrder;
+        stats->info.cntError -= stats->info.cntOutofOrder;
+        if ( stats->info.cntError < 0 ) {
+            stats->info.cntError = 0;
         }
-        stats->info.cntDatagrams = (isUDP(stats) ? stats->PacketID : stats->cntDatagrams);
+        stats->info.cntDatagrams = ((stats->info.mUDP == kMode_Server) ? stats->PacketID : stats->cntDatagrams);
         stats->info.TotalLen = stats->TotalLen;
         stats->info.startTime = 0;
         stats->info.endTime = TimeDifference( stats->packetTime, stats->startTime );
+	stats->info.transit.minTransit = stats->info.transit.totminTransit;
+	stats->info.transit.maxTransit = stats->info.transit.totmaxTransit;
+	stats->info.transit.cntTransit = stats->info.transit.totcntTransit;
+	stats->info.transit.sumTransit = stats->info.transit.totsumTransit;
+	stats->info.transit.meanTransit = stats->info.transit.totmeanTransit;
+	stats->info.transit.m2Transit = stats->info.transit.totm2Transit;
+	stats->info.transit.vdTransit = stats->info.transit.totvdTransit;
+	if (stats->info.mTCP == kMode_Client) {
+	    stats->info.tcp.write.WriteErr = stats->info.tcp.write.totWriteErr;
+	    stats->info.tcp.write.WriteCnt = stats->info.tcp.write.totWriteCnt;
+	    stats->info.tcp.write.TCPretry = stats->info.tcp.write.totTCPretry;
+	}
+	if (stats->info.mTCP == kMode_Server) {
+	    int ix;
+	    stats->info.tcp.read.cntRead = stats->info.tcp.read.totcntRead;
+	    for (ix = 0; ix < 8; ix++) {
+		stats->info.tcp.read.bins[ix] = stats->info.tcp.read.totbins[ix];
+	    }
+	}
+	if (stats->info.endTime > 0) {
+	    stats->info.IPGcnt = (int) (stats->cntDatagrams / stats->info.endTime);
+	} else {
+	    stats->info.IPGcnt = 0;
+	}
+	stats->info.IPGsum = 1;
         stats->info.free = 1;
+
         reporter_print( stats, TRANSFER_REPORT, force );
         if ( isMultipleReport(stats) ) {
             reporter_handle_multiple_reports( multireport, &stats->info, force );
@@ -804,29 +1060,53 @@ int reporter_condprintstats( ReporterData *stats, MultiHeader *multireport, int 
                    stats->intervalTime.tv_usec != 0) && 
                   TimeDifference( stats->nextTime, 
                                   stats->packetTime ) < 0 ) {
-        stats->info.cntOutofOrder = stats->cntOutofOrder - stats->lastOutofOrder;
-        stats->lastOutofOrder = stats->cntOutofOrder;
-        // assume most of the time out-of-order packets are not
-        // duplicate packets, so conditionally subtract them from the lost packets.
-        stats->info.cntError = stats->cntError - stats->lastError;
-        if ( stats->info.cntError > stats->info.cntOutofOrder ) {
-            stats->info.cntError -= stats->info.cntOutofOrder;
-        }
-        stats->lastError = stats->cntError;
-        stats->info.cntDatagrams = (isUDP( stats ) ? stats->PacketID - stats->lastDatagrams :
-                                                     stats->cntDatagrams - stats->lastDatagrams);
-        stats->lastDatagrams = (isUDP( stats ) ? stats->PacketID : stats->cntDatagrams);
-        stats->info.TotalLen = stats->TotalLen - stats->lastTotal;
-        stats->lastTotal = stats->TotalLen;
-        stats->info.startTime = stats->info.endTime;
-        stats->info.endTime = TimeDifference( stats->nextTime, stats->startTime );
-        TimeAdd( stats->nextTime, stats->intervalTime );
-        stats->info.free = 0;
-        reporter_print( stats, TRANSFER_REPORT, force );
-        if ( isMultipleReport(stats) ) {
-            reporter_handle_multiple_reports( multireport, &stats->info, force );
-        }
-    }
+#ifdef HAVE_STRUCT_TCP_INFO_TCPI_TOTAL_RETRANS
+	    gettcpistats(stats);
+#endif
+	    stats->info.cntOutofOrder = stats->cntOutofOrder - stats->lastOutofOrder;
+	    stats->lastOutofOrder = stats->cntOutofOrder;
+	    // assume most of the  time out-of-order packets are not
+	    // duplicate packets, so conditionally subtract them from the lost packets.
+	    stats->info.cntError = stats->cntError - stats->lastError;
+	    stats->info.cntError -= stats->info.cntOutofOrder;
+	    if ( stats->info.cntError < 0) {
+		stats->info.cntError = 0;
+	    }
+	    stats->lastError = stats->cntError;
+	    stats->info.cntDatagrams = ((stats->info.mUDP == kMode_Server) ? stats->PacketID - stats->lastDatagrams :
+					stats->cntDatagrams - stats->lastDatagrams);
+	    stats->lastDatagrams = ((stats->info.mUDP == kMode_Server) ? stats->PacketID : stats->cntDatagrams);
+	    stats->info.TotalLen = stats->TotalLen - stats->lastTotal;
+	    stats->lastTotal = stats->TotalLen;
+	    stats->info.startTime = stats->info.endTime;
+	    stats->info.endTime = TimeDifference( stats->nextTime, stats->startTime );
+	    TimeAdd( stats->nextTime, stats->intervalTime );
+	    stats->info.free = 0;
+	    reporter_print( stats, TRANSFER_REPORT, force );
+	    if ( isMultipleReport(stats) ) {
+		reporter_handle_multiple_reports( multireport, &stats->info, force );
+	    }
+	    /*
+	     * Reset transfer stats now that both the individual and SUM reports
+	     * have completed
+	     */
+	    if (stats->info.mUDP) {
+		stats->info.IPGcnt = 0;
+		stats->info.IPGsum = 0;
+	    }
+	    if (stats->info.mEnhanced) {
+		if (stats->info.mTCP == (char)kMode_Client) {
+		    stats->info.tcp.write.WriteCnt = 0;
+		    stats->info.tcp.write.WriteErr = 0;
+		} else if (stats->info.mTCP == (char)kMode_Server) {
+		    int ix;
+		    stats->info.tcp.read.cntRead = 0;
+		    for (ix = 0; ix < 8; ix++) { 
+			stats->info.tcp.read.bins[ix] = 0;
+		    }
+		}
+	    }
+	}
     return force;
 }
 
@@ -896,7 +1176,7 @@ void PrintMSS( ReporterData *stats ) {
         } else if ( checkMSS_MTU( inMSS, 576 ) ) {
             net = "minimum";
             mtu = 576;
-            printf( warn_no_pathmtu );
+            printf( "%s", warn_no_pathmtu );
         } else {
             mtu = inMSS + 40;
             net = "unknown interface";

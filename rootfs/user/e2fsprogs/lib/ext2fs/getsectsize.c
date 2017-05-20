@@ -10,9 +10,14 @@
  * %End-Header%
  */
 
+#ifndef _LARGEFILE_SOURCE
 #define _LARGEFILE_SOURCE
+#endif
+#ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
+#endif
 
+#include "config.h"
 #include <stdio.h>
 #if HAVE_UNISTD_H
 #include <unistd.h>
@@ -21,6 +26,9 @@
 #include <errno.h>
 #endif
 #include <fcntl.h>
+#ifdef HAVE_SYS_DISK_H
+#include <sys/disk.h>
+#endif
 #ifdef HAVE_LINUX_FD_H
 #include <sys/ioctl.h>
 #include <linux/fd.h>
@@ -45,16 +53,18 @@ errcode_t ext2fs_get_device_sectsize(const char *file, int *sectsize)
 {
 	int	fd;
 
-#ifdef HAVE_OPEN64
-	fd = open64(file, O_RDONLY);
-#else
-	fd = open(file, O_RDONLY);
-#endif
+	fd = ext2fs_open_file(file, O_RDONLY, 0);
 	if (fd < 0)
 		return errno;
 
 #ifdef BLKSSZGET
 	if (ioctl(fd, BLKSSZGET, sectsize) >= 0) {
+		close(fd);
+		return 0;
+	}
+#endif
+#ifdef DIOCGSECTORSIZE
+	if (ioctl(fd, DIOCGSECTORSIZE, sectsize) >= 0) {
 		close(fd);
 		return 0;
 	}
@@ -65,22 +75,57 @@ errcode_t ext2fs_get_device_sectsize(const char *file, int *sectsize)
 }
 
 /*
+ * Return desired alignment for direct I/O
+ */
+int ext2fs_get_dio_alignment(int fd)
+{
+	int align = 0;
+
+#ifdef BLKSSZGET
+	if (ioctl(fd, BLKSSZGET, &align) < 0)
+		align = 0;
+#endif
+#ifdef DIOCGSECTORSIZE
+	if (align <= 0 &&
+	    ioctl(fd, DIOCGSECTORSIZE, &align) < 0)
+		align = 0;
+#endif
+
+#ifdef _SC_PAGESIZE
+	if (align <= 0)
+		align = sysconf(_SC_PAGESIZE);
+#endif
+#ifdef HAVE_GETPAGESIZE
+	if (align <= 0)
+		align = getpagesize();
+#endif
+	if (align <= 0)
+		align = 4096;
+
+	return align;
+}
+
+/*
  * Returns the physical sector size of a device
  */
 errcode_t ext2fs_get_device_phys_sectsize(const char *file, int *sectsize)
 {
 	int	fd;
 
-#ifdef HAVE_OPEN64
-	fd = open64(file, O_RDONLY);
-#else
-	fd = open(file, O_RDONLY);
-#endif
+	fd = ext2fs_open_file(file, O_RDONLY, 0);
 	if (fd < 0)
 		return errno;
 
 #ifdef BLKPBSZGET
 	if (ioctl(fd, BLKPBSZGET, sectsize) >= 0) {
+		close(fd);
+		return 0;
+	}
+#endif
+#ifdef DIOCGSECTORSIZE
+	/* This isn't really the physical sector size, but FreeBSD
+	 * doesn't seem to have this concept. */
+	if (ioctl(fd, DIOCGSECTORSIZE, sectsize) >= 0) {
 		close(fd);
 		return 0;
 	}

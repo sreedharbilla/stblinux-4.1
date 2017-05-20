@@ -1,7 +1,7 @@
 /*
  *  cma_driver.c - Broadcom STB platform CMA driver
  *
- *  Copyright © 2009 - 2016 Broadcom
+ *  Copyright © 2009 - 2017 Broadcom
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -186,20 +186,6 @@ static void __init cma_reserve_one(int region_idx)
 	}
 }
 
-void __init cma_setup_defaults(void)
-{
-	int ret, iter = 0;
-
-	do {
-		phys_addr_t start, size;
-		/* fill in start and size */
-		ret = brcmstb_memory_get_default_reserve(iter, &start, &size);
-		if (!ret)
-			(void) __cma_rsv_setup(start, size);
-		iter++;
-	} while (ret != -ENOMEM);
-}
-
 void __init cma_reserve(void)
 {
 	int i;
@@ -212,7 +198,7 @@ void __init cma_reserve(void)
 	if (brcmstb_default_reserve == BRCMSTB_RESERVE_CMA &&
 			!n_cma_regions &&
 			!brcmstb_memory_override_defaults)
-		cma_setup_defaults();
+		brcmstb_memory_default_reserve(__cma_rsv_setup);
 
 	for (i = 0; i < n_cma_regions; ++i)
 		cma_reserve_one(i);

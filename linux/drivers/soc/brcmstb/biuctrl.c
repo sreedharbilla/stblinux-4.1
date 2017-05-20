@@ -223,14 +223,18 @@ static struct syscore_ops brcmstb_cpu_credit_syscore_ops = {
 #endif
 
 
-void __init brcmstb_biuctrl_init(void)
+static int __init brcmstb_biuctrl_init(void)
 {
 	setup_hifcpubiuctrl_regs();
-	if (mcp_write_pairing_set())
+	if (mcp_write_pairing_set()) {
 		pr_err("MCP: Unable to disable write pairing!\n");
+		return -EIO;
+	}
 
 	mcp_b53_set();
 #ifdef CONFIG_PM_SLEEP
 	register_syscore_ops(&brcmstb_cpu_credit_syscore_ops);
 #endif
+	return 0;
 }
+early_initcall(brcmstb_biuctrl_init);

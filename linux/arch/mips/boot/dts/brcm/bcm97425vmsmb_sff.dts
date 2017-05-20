@@ -35,6 +35,10 @@
 	status = "okay";
 };
 
+&usbphy_0 {
+	status = "okay";
+};
+
 &ehci0 {
 	status = "okay";
 };
@@ -48,6 +52,10 @@
 };
 
 &ohci1 {
+	status = "okay";
+};
+
+&usbphy_1 {
 	status = "okay";
 };
 

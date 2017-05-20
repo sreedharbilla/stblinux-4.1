@@ -87,6 +87,7 @@ const struct option long_options[] =
 {"bandwidth",  required_argument, NULL, 'b'},
 {"client",     required_argument, NULL, 'c'},
 {"dualtest",         no_argument, NULL, 'd'},
+{"enhancedreports",   no_argument, NULL, 'e'},
 {"format",     required_argument, NULL, 'f'},
 {"help",             no_argument, NULL, 'h'},
 {"interval",   required_argument, NULL, 'i'},
@@ -103,6 +104,7 @@ const struct option long_options[] =
 {"window",     required_argument, NULL, 'w'},
 {"reportexclude", required_argument, NULL, 'x'},
 {"reportstyle",required_argument, NULL, 'y'},
+{"realtime",         no_argument, NULL, 'z'},
 
 // more esoteric options
 {"bind",       required_argument, NULL, 'B'},
@@ -132,6 +134,7 @@ const struct option env_options[] =
 {"IPERF_BANDWIDTH",  required_argument, NULL, 'b'},
 {"IPERF_CLIENT",     required_argument, NULL, 'c'},
 {"IPERF_DUALTEST",         no_argument, NULL, 'd'},
+{"IPERF_ENHANCEDREPORTS",  no_argument, NULL, 'e'},
 {"IPERF_FORMAT",     required_argument, NULL, 'f'},
 // skip help
 {"IPERF_INTERVAL",   required_argument, NULL, 'i'},
@@ -169,7 +172,7 @@ const struct option env_options[] =
 
 #define SHORT_OPTIONS()
 
-const char short_options[] = "1b:c:df:hi:l:mn:o:p:rst:uvw:x:y:B:CDF:IL:M:NP:RS:T:UVWZ:";
+const char short_options[] = "1b:c:def:hi:l:mn:o:p:rst:uvw:x:y:zB:CDF:IL:M:NP:RS:T:UVWZ:";
 
 /* -------------------------------------------------------------------
  * defaults
@@ -197,6 +200,7 @@ void Settings_Initialize( thread_Settings *main ) {
     // option, defaults
     main->flags         = FLAG_MODETIME | FLAG_STDOUT; // Default time and stdout
     //main->mUDPRate      = 0;           // -b,  ie. TCP mode
+    main->mUDPRateUnits = kRate_BW;
     //main->mHost         = NULL;        // -c,  none, required for client
     main->mMode         = kTest_Normal;  // -d,  mMode == kTest_DualTest
     main->mFormat       = 'a';           // -f,  adaptive bits
@@ -208,6 +212,7 @@ void Settings_Initialize( thread_Settings *main ) {
     // mAmount is time also              // -n,  N/A
     //main->mOutputFileName = NULL;      // -o,  filename
     main->mPort         = 5001;          // -p,  ttcp port
+    main->mBindPort     = 0;             // -B,  default port for bind
     // mMode    = kTest_Normal;          // -r,  mMode == kTest_TradeOff
     main->mThreadMode   = kMode_Unknown; // -s,  or -c, none
     main->mAmount       = 1000;          // -t,  10 seconds
@@ -311,25 +316,31 @@ void Settings_ParseCommandLine( int argc, char **argv, thread_Settings *mSetting
 
 void Settings_Interpret( char option, const char *optarg, thread_Settings *mExtSettings ) {
     char outarg[100];
+    char *parsedopts;
+    char *results = NULL;
+    max_size_t theNum;
+    char suffix='\0';
 
     switch ( option ) {
         case '1': // Single Client
             setSingleClient( mExtSettings );
             break;
         case 'b': // UDP bandwidth
-            if ( !isUDP( mExtSettings ) ) {
-                fprintf( stderr, warn_implied_udp, option );
-            }
-
-            if ( mExtSettings->mThreadMode != kMode_Client ) {
-                fprintf( stderr, warn_invalid_server_option, option );
-                break;
-            }
-
             Settings_GetLowerCaseArg(optarg,outarg);
-            mExtSettings->mUDPRate = byte_atoi(outarg);
-            setUDP( mExtSettings );
-
+	    // scan for PPS units, just look for 'p' as that's good enough
+#ifdef HAVE_QUAD_SUPPORT
+	    sscanf(outarg, "%llu%c", &theNum, &suffix );
+#else
+	    sscanf(outarg, "%lu%c", &theNum, &suffix );
+#endif
+	    if (suffix == 'p') {
+		mExtSettings->mUDPRateUnits = kRate_PPS;
+		mExtSettings->mUDPRate = theNum;
+	    } else {		
+		mExtSettings->mUDPRateUnits = kRate_BW;
+		mExtSettings->mUDPRate = byte_atoi(outarg);
+	    }
+            setBWSet( mExtSettings );
             // if -l has already been processed, mBufLenSet is true
             // so don't overwrite that value.
             if ( !isBuflenSet( mExtSettings ) ) {
@@ -369,23 +380,28 @@ void Settings_Interpret( char option, const char *optarg, thread_Settings *mExtS
             mExtSettings->mMode = kTest_TradeOff;
 #endif
             break;
-
+        case 'e': // Use enhanced reports 
+            setEnhanced( mExtSettings );
+            break;
         case 'f': // format to print in
             mExtSettings->mFormat = (*optarg);
             break;
 
         case 'h': // print help and exit
-            fprintf(stderr, usage_long1);
-            fprintf(stderr, usage_long2);
+	    fprintf(stderr, "%s", usage_long1);
+            fprintf(stderr, "%s", usage_long2);
             exit(1);
             break;
 
         case 'i': // specify interval between periodic bw reports
             mExtSettings->mInterval = atof( optarg );
-            if ( mExtSettings->mInterval < 0.5 ) {
+            if ( mExtSettings->mInterval < SMALLEST_INTERVAL ) {
                 fprintf (stderr, report_interval_small, mExtSettings->mInterval);
-                mExtSettings->mInterval = 0.5;
+                mExtSettings->mInterval = SMALLEST_INTERVAL;
             }
+            if ( mExtSettings->mInterval < 0.5 ) {
+		setEnhanced( mExtSettings );
+	    }
             break;
 
         case 'l': // length of each buffer
@@ -455,9 +471,10 @@ void Settings_Interpret( char option, const char *optarg, thread_Settings *mExtS
             mExtSettings->mThreadMode = kMode_Listener;
             break;
 
-        case 't': // seconds to write for
-            // time mode (instead of amount mode)
+        case 't': // seconds to run the client, server, listener
+            // time mode (instead of amount mode), units is 10 ms
             setModeTime( mExtSettings );
+            setServerModeTime( mExtSettings );
             mExtSettings->mAmount = (int) (atof( optarg ) * 100.0);
             break;
 
@@ -466,7 +483,8 @@ void Settings_Interpret( char option, const char *optarg, thread_Settings *mExtS
             // already be non-zero, so don't overwrite that value
             if ( !isUDP( mExtSettings ) ) {
                 setUDP( mExtSettings );
-                mExtSettings->mUDPRate = kDefault_UDPRate;
+		if ( !isBWSet( mExtSettings ) )
+		    mExtSettings->mUDPRate = kDefault_UDPRate;
             }
 
             // if -l has already been processed, mBufLenSet is true
@@ -482,7 +500,7 @@ void Settings_Interpret( char option, const char *optarg, thread_Settings *mExtS
             break;
 
         case 'v': // print version and exit
-            fprintf( stderr, version );
+	    fprintf( stderr, "%s", version );
             exit(1);
             break;
 
@@ -524,6 +542,11 @@ void Settings_Interpret( char option, const char *optarg, thread_Settings *mExtS
                 optarg++;
             }
             break;
+#ifdef HAVE_SCHED_SETSCHEDULER
+        case 'z': // Use realtime scheduling
+	    setRealtime( mExtSettings );
+            break;
+#endif
 
         case 'y': // Reporting Style
             switch ( *optarg ) {
@@ -539,8 +562,35 @@ void Settings_Interpret( char option, const char *optarg, thread_Settings *mExtS
 
             // more esoteric options
         case 'B': // specify bind address
-            mExtSettings->mLocalhost = new char[ strlen( optarg ) + 1 ];
-            strcpy( mExtSettings->mLocalhost, optarg );
+	    parsedopts = new char[ strlen( optarg ) + 1 ];
+	    strcpy(parsedopts, optarg );
+	    mExtSettings->mLocalhost = NULL;
+	    // Check for local port assignment only on the client
+	    if ( mExtSettings->mThreadMode == kMode_Client ) {
+		char *saveptr;
+		// v4 uses a colon as the delimeter for the local bind port, 192.168.1.1:6001
+		// v6 uses bracket notation [2001:e30:1401:2:d46e:b891:3082:b939]:6001
+		if (!isIPV6(mExtSettings)) {
+		    if ((results = strtok_r(parsedopts, ":", &saveptr)) != NULL) {
+			mExtSettings->mLocalhost = new char[ strlen( results ) + 1 ];
+			strcpy( mExtSettings->mLocalhost, results );
+			if ((results = strtok_r(NULL, ":",&saveptr)) != NULL)
+			    mExtSettings->mBindPort = atoi(results);
+		    } 
+		} else if (parsedopts[0]=='[' && (results = strtok_r(parsedopts, "]",&saveptr)) != NULL) {
+		    mExtSettings->mLocalhost = new char[strlen(results)];
+		    // skip the first bracket
+		    results++;
+		    strcpy(mExtSettings->mLocalhost, results);
+		    if ((results = strtok_r(NULL, ":",&saveptr)) != NULL) 
+			mExtSettings->mBindPort = atoi(results);
+		}
+	    }
+	    delete parsedopts;
+	    if (mExtSettings->mLocalhost == NULL) {
+		mExtSettings->mLocalhost = new char[ strlen( optarg ) + 1 ];
+		strcpy( mExtSettings->mLocalhost, optarg );
+	    }
             // Test for Multicast
             iperf_sockaddr temp;
             SockAddr_setHostname( mExtSettings->mLocalhost, &temp,
@@ -759,14 +809,16 @@ void Settings_GenerateClientSettings( thread_Settings *server,
         if ( hdr->bufferlen != 0 ) {
             (*client)->mBufLen = ntohl(hdr->bufferlen);
         }
-        if ( hdr->mWinBand != 0 ) {
-            if ( isUDP( server ) ) {
-                (*client)->mUDPRate = ntohl(hdr->mWinBand);
-            } else {
-                (*client)->mTCPWin = ntohl(hdr->mWinBand);
-            }
-        }
-        (*client)->mAmount     = ntohl(hdr->mAmount);
+        (*client)->mTCPWin = ntohl(hdr->mWindowSize);
+	if ( !isBWSet(server) ) {
+	    (*client)->mUDPRate = ntohl(hdr->mRate); 
+	    if ((flags & UNITS_PPS) == UNITS_PPS) {
+		(*client)->mUDPRateUnits = kRate_PPS;
+	    } else {
+		(*client)->mUDPRateUnits = kRate_BW;
+	    }
+	}
+	(*client)->mAmount     = ntohl(hdr->mAmount);
         if ( ((*client)->mAmount & 0x80000000) > 0 ) {
             setModeTime( (*client) );
 #ifndef WIN32
@@ -820,11 +872,8 @@ void Settings_GenerateClientHdr( thread_Settings *client, client_hdr *hdr ) {
     } else {
         hdr->bufferlen = 0;
     }
-    if ( isUDP( client ) ) {
-        hdr->mWinBand  = htonl(client->mUDPRate);
-    } else {
-        hdr->mWinBand  = htonl(client->mTCPWin);
-    }
+    hdr->mWindowSize  = htonl(client->mTCPWin);
+    hdr->mRate = htonl(client->mUDPRate);
     if ( client->mListenPort != 0 ) {
         hdr->mPort  = htonl(client->mListenPort);
     } else {
@@ -837,7 +886,8 @@ void Settings_GenerateClientHdr( thread_Settings *client, client_hdr *hdr ) {
         hdr->mAmount    = htonl((long)client->mAmount);
         hdr->mAmount &= htonl( 0x7FFFFFFF );
     }
-    if ( client->mMode == kTest_DualTest ) {
-        hdr->flags |= htonl(RUN_NOW);
-    }
+    if (client->mUDPRateUnits == kRate_PPS)
+	hdr->flags |= htonl(UNITS_PPS);
+    if ( client->mMode == kTest_DualTest )
+	hdr->flags |= htonl(RUN_NOW);
 }

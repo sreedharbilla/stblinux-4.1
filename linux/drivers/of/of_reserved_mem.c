@@ -25,6 +25,21 @@
 static struct reserved_mem reserved_mem[MAX_RESERVED_REGIONS];
 static int reserved_mem_count;
 
+int __reserved_mem_get_count(void)
+{
+	return reserved_mem_count;
+}
+EXPORT_SYMBOL(__reserved_mem_get_count);
+
+struct reserved_mem *__reserved_mem_get_entry(int pos)
+{
+	if (pos > reserved_mem_count)
+		return NULL;
+
+	return &reserved_mem[pos];
+}
+EXPORT_SYMBOL(__reserved_mem_get_entry);
+
 #if defined(CONFIG_HAVE_MEMBLOCK)
 #include <linux/memblock.h>
 int __init __weak early_init_dt_alloc_reserved_memory_arch(phys_addr_t size,
@@ -77,6 +92,7 @@ void __init fdt_reserved_mem_save_node(unsigned long node, const char *uname,
 	}
 
 	rmem->fdt_node = node;
+	rmem->reserved_name = of_get_flat_dt_prop(node, "reserved-names", NULL);
 	rmem->name = uname;
 	rmem->base = base;
 	rmem->size = size;

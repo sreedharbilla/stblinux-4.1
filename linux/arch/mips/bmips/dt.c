@@ -9,6 +9,7 @@
 #include <linux/kernel.h>
 #include <linux/of_fdt.h>
 #include <linux/libfdt.h>
+#include <linux/phy.h>
 #include <asm/io.h>
 #include <asm/bootinfo.h>
 #include <asm/bug.h>
@@ -170,11 +171,151 @@ static int __init moca_set_chip_id(void *dtb, int offset)
 	return 0;
 }
 
+static const char __init *phy_type_to_str(const char *phy_type)
+{
+	if (!strcmp(phy_type, "INT"))
+		return "internal";
+	else if (!strcmp(phy_type, "MII"))
+		return "mii";
+	else if (!strcmp(phy_type, "RGMII_NO_ID"))
+		return "rgmii";
+	else if (!strcmp(phy_type, "RGMII_IBS"))
+		return "rgmii-ibs";
+	else if (!strcmp(phy_type, "RGMII"))
+		return "rgmii-txid";
+	else if (!strcmp(phy_type, "RVMII"))
+		return "rev-mii";
+	else if (!strcmp(phy_type, "MOCA"))
+		return "moca";
+	else if (!strcmp(phy_type, "GMII"))
+		return "gmii";
+
+	pr_warn("unhandled phy_type: %s\n", phy_type);
+	return NULL;
+}
+
+static void __init genet0_update_phy_settings(void *dtb, int offset)
+{
+	u32 fixed_link[5] = { 0, cpu_to_fdt32(1), 0 /* speed */, 0, 0 };
+	int rc, mdio_offs = -1, phy_offs = -1;
+	const struct fdt_property *prop;
+	int phy_speed, phy_addr;
+	const char *phy_type;
+	char eth0_env[255];
+
+	/* If interface is disabled, don't bother */
+	prop = fdt_get_property(dtb, offset, "status", NULL);
+	if (prop && !strcmp(prop->data, "disabled"))
+		return;
+
+	rc = cfe_getenv("ETH0_PHY", eth0_env, sizeof(eth0_env));
+	if (rc != CFE_OK) {
+		pr_err("Can't get ETH0_PHY\n");
+		return;
+	}
+
+	phy_type = phy_type_to_str(eth0_env);
+	if (!phy_type) {
+		pr_err("Can't set phy-mode\n");
+		return;
+	}
+
+	fdt_delprop(dtb, offset, "phy-mode");
+	rc = fdt_setprop(dtb, offset, "phy-mode",
+			 phy_type, strlen(phy_type) + 1);
+	if (rc) {
+		pr_err("Failed to replace \"phy-mode\"\n");
+		return;
+	}
+
+	rc = cfe_getenv("ETH0_SPEED", eth0_env, sizeof(eth0_env));
+	if (rc != CFE_OK) {
+		pr_err("Failed to get ETH0_SPEED\n");
+		return;
+	}
+
+	rc = kstrtoint(eth0_env, 10, &phy_speed);
+	if (rc)
+		return;
+
+	fixed_link[2] = cpu_to_fdt32(phy_speed);
+
+	rc = cfe_getenv("ETH0_PHYADDR", eth0_env, sizeof(eth0_env));
+	if (rc != CFE_OK) {
+		pr_err("Failed to get ETH0_PHYADDR\n");
+		return;
+	}
+
+	/* Let the kernel scan the PHY address */
+	if (!strcmp(eth0_env, "probe"))
+		phy_addr = -1;
+	else if (!strcmp(eth0_env, "noprobe"))
+		phy_addr = PHY_MAX_ADDR;
+	else {
+		rc = kstrtoint(eth0_env, 10, &phy_addr);
+		if (rc)
+			return;
+	}
+
+	if (phy_addr == 0 || phy_addr == PHY_MAX_ADDR)
+		goto disable_mdio;
+
+	rc = cfe_getenv("ETH0_MDIO_MODE", eth0_env, sizeof(eth0_env));
+	if (rc != CFE_OK) {
+		pr_err("Failed to get ETH0_MDIO_MODE\n");
+		return;
+	}
+
+	if (!strcmp(eth0_env, "boot") || !strcmp(eth0_env, "0")) {
+disable_mdio:
+		rc = fdt_setprop(dtb, offset, "fixed-link", fixed_link,
+			    5 * sizeof(u32));
+		if (rc)
+			pr_err("Failed to set \"fixed-link\"\n");
+
+		/* Let the fixed-link logic kick in */
+		rc = fdt_delprop(dtb, offset, "phy-handle");
+		return;
+	}
+
+	pr_debug("%s: mdio_mode: %s, speed: %d, addr: %d, mode: %s\n",
+		 __func__, eth0_env, phy_speed, phy_addr, phy_type);
+
+	/* Do this almost as a last step to keep working with valid offsets */
+	mdio_offs = fdt_next_node(dtb, offset, NULL);
+	if (mdio_offs < 0) {
+		pr_err("Can't get MDIO node offset\n");
+		return;
+	}
+
+	phy_offs = fdt_next_node(dtb, mdio_offs, NULL);
+	if (phy_offs < 0) {
+		pr_err("Can't get PHY node offset\n");
+		return;
+	}
+
+	fdt_delprop(dtb, phy_offs, "reg");
+	if (phy_addr != -1) {
+		phy_addr = cpu_to_fdt32(phy_addr);
+		rc = fdt_setprop(dtb, phy_offs, "reg", &phy_addr, sizeof(u32));
+		if (rc) {
+			pr_err("Failed to set PHY \"reg\": %d\n", rc);
+			return;
+		}
+	}
+
+	phy_speed = cpu_to_fdt32(phy_speed);
+	rc = fdt_setprop_inplace(dtb, phy_offs, "max-speed", &phy_speed,
+				  sizeof(u32));
+	if (rc)
+		pr_err("Failed to set \"max-speed\"\n");
+}
+
 static void __init transfer_net_cfe_to_dt(void *dtb)
 {
 	const char *genet_match = "brcm,genet-v";
 	const char *moca_match = "brcm,bmoca-instance";
-	int offset = 0, rc, ret, genet0_off;
+	int offset = 0, rc, ret, genet0_off = 0;
 	const char *match = genet_match;
 	const struct fdt_property *prop;
 	unsigned int times = 0;
@@ -207,9 +348,13 @@ again:
 			if (ret == 0)
 				base_addr[4]++;
 
-			/* Save GENET_0 offset for next GENET iteration */
-			if (times == 0)
+			/* Save GENET_0 offset for next GENET iteration,
+			 * update its PHY parameters
+			 */
+			if (times == 0) {
+				genet0_update_phy_settings(dtb, offset);
 				genet0_off = offset;
+			}
 
 			times++;
 
@@ -502,7 +647,8 @@ static void __init pick_board_dt(void *orig_dtb)
 		dtb = &__dtb_bcm97435svmb_begin;
 	} else if (!strcmp(board_name, "BCM97435SVMBV20")) {
 		dtb = &__dtb_bcm97435svmb_begin;
-	} else if (!strcmp(board_name, "BCM97435VMSMB_SFF")) {
+	} else if (!strncmp(board_name, "BCM97435VMSMB_SFF",
+			    strlen("BCM97435VMSMB_SFF"))) {
 		dtb = &__dtb_bcm97435vmsmb_sff_begin;
 	} else {
 		cfe_die("unknown board [%s]\n", board_name);

@@ -143,6 +143,7 @@ extern const unsigned long brcmstb_pm_do_s2_sz;
 extern asmlinkage int brcmstb_pm_do_s2(void __iomem *aon_ctrl_base,
 		void __iomem *ddr_phy_pll_status);
 
+static int __clear_region(struct dma_region arr[], int max);
 static int (*brcmstb_pm_do_s2_sram)(void __iomem *aon_ctrl_base,
 		void __iomem *ddr_phy_pll_status);
 
@@ -173,12 +174,13 @@ static int brcm_pm_proc_show(struct seq_file *s, void *data)
 	}
 
 	for (i = 0; i < procfs_data->len; i++) {
-		unsigned long addr = procfs_data->region[i].addr;
-		unsigned long len = procfs_data->region[i].len;
+		struct dma_region *entry = &procfs_data->region[i];
+		unsigned long addr = entry->addr;
+		unsigned long len = entry->len;
 		unsigned long end = (addr > 0 || len > 0) ? addr + len - 1 : 0;
 
-		seq_printf(s, "%3d\t0x%08lx\t%12lu\t0x%08lx\n", i, addr, len,
-			end);
+		seq_printf(s, "%3d\t0x%08lx\t%12lu\t0x%08lx%s\n", i, addr, len,
+			end, entry->persistent ? "\t*" : "");
 	}
 	return 0;
 }
@@ -214,13 +216,17 @@ static ssize_t brcm_pm_seq_write(struct file *file, const char __user *buf,
 
 	/* Special command "clear" empties the exclusions or regions list. */
 	if (strcmp(str, "clear") == 0) {
-		int region_len = procfs_data->len * sizeof(*procfs_data->region);
+		struct dma_region *region = procfs_data->region;
+		int max, ret;
+
+		max = is_exclusion ? num_exclusions : num_regions;
+		ret = __clear_region(region, max);
 
 		if (is_exclusion)
-			num_exclusions = 0;
+			num_exclusions = ret;
 		else
-			num_regions = 0;
-		memset(procfs_data->region, 0, region_len);
+			num_regions = ret;
+
 		return size;
 	}
 
@@ -879,33 +885,78 @@ static int brcmstb_pm_s3_main_memory_hash(struct brcmstb_s3_params *params,
 	return 0;
 }
 
-int brcmstb_pm_mem_exclude(phys_addr_t addr, size_t len)
+static int __clear_region(struct dma_region arr[], int max)
 {
-	if (num_exclusions >= MAX_EXCLUDE) {
-		pr_err("exclusion list is full\n");
-		return -ENOSPC;
+	int i, j;
+	bool found_non_persistent = false;
+
+	for (i = 0, j = 0; i < max; i++) {
+		if (!arr[i].persistent) {
+			/*
+			 * Found a non-persistent entry. Remember this, so we
+			 * can fill the freed up entry with a persistent entry
+			 * should there be one.
+			 */
+			found_non_persistent = true;
+		} else if (found_non_persistent) {
+			/*
+			 * We found a persistent entry, but at least one non-
+			 * persistent entry preceeded it. Copy our entry to the
+			 * first available entry in the array.
+			 */
+			arr[j++] = arr[i];
+		} else {
+			/*
+			 * So far we've only found persistent entries. We need
+			 * to keep all of them. Just increment the "empty"
+			 * counter.
+			 */
+			j++;
+			continue;
+		}
+		memset(&arr[i], 0, sizeof(arr[i]));
 	}
 
-	exclusions[num_exclusions].addr = addr;
-	exclusions[num_exclusions].len = len;
-	num_exclusions++;
+	return j;
+}
+
+static int __sorted_insert(struct dma_region arr[], int *cur, int max,
+			   phys_addr_t addr, size_t len, bool persistent)
+{
+	int end = *cur;
+
+	if (end >= max)
+		return -ENOSPC;
+
+	arr[end].addr = addr;
+	arr[end].len = len;
+	arr[end].persistent = persistent;
+	end++;
+	*cur = end;
+
+	/* Not pretty to insert first and sort second, but it works for now. */
+	sort(arr, end, sizeof(arr[0]), &dma_region_compare, NULL);
 
 	return 0;
+}
+
+static int __pm_mem_exclude(phys_addr_t addr, size_t len, bool persistent)
+{
+	return __sorted_insert(exclusions, &num_exclusions, MAX_EXCLUDE, addr,
+			      len, persistent);
+}
+
+
+int brcmstb_pm_mem_exclude(phys_addr_t addr, size_t len)
+{
+	return __pm_mem_exclude(addr, len, false);
 }
 EXPORT_SYMBOL(brcmstb_pm_mem_exclude);
 
 int brcmstb_pm_mem_region(phys_addr_t addr, size_t len)
 {
-	if (num_regions >= MAX_REGION) {
-		pr_err("regions list is full\n");
-		return -ENOSPC;
-	}
-
-	regions[num_regions].addr = addr;
-	regions[num_regions].len = len;
-	num_regions++;
-
-	return 0;
+	return __sorted_insert(regions, &num_regions, MAX_EXCLUDE, addr, len,
+			      false);
 }
 EXPORT_SYMBOL(brcmstb_pm_mem_region);
 
@@ -919,14 +970,8 @@ static noinline int brcmstb_pm_s3_finish(void)
 	phys_addr_t params_pa = ctrl.s3_params_pa;
 	phys_addr_t reentry = virt_to_phys(&cpu_resume);
 	enum bsp_initiate_command cmd;
-	int ret, num_exclude;
+	int ret;
 	u32 flags;
-
-	ret = brcmstb_pm_mem_exclude(params_pa, sizeof(*params));
-	if (ret) {
-		pr_err("failed to add parameter exclusion region\n");
-		return ret;
-	}
 
 	/*
 	 * Clear parameter structure, but not DTU area, which has already been
@@ -953,13 +998,9 @@ static noinline int brcmstb_pm_s3_finish(void)
 		return -EIO;
 	}
 
-	/* Reset exclusion regions */
-	num_exclude = num_exclusions;
-	num_exclusions = 0;
-
 	/* Hash main memory */
 	ret = brcmstb_pm_s3_main_memory_hash(params, params_pa, exclusions,
-					     num_exclude);
+					     num_exclusions);
 	if (ret)
 		return ret;
 
@@ -1403,6 +1444,13 @@ static int brcmstb_pm_probe(struct platform_device *pdev)
 	ret = brcmstb_regsave_init();
 	if (ret)
 		goto out2;
+
+	ret = __pm_mem_exclude(ctrl.s3_params_pa, sizeof(*ctrl.s3_params),
+			       true);
+	if (ret) {
+		pr_err("failed to add parameter exclusion region\n");
+		goto out2;
+	}
 
 	/*
 	 * This code assumes only that one DTU config area needs to be saved.

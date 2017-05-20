@@ -1,0 +1,596 @@
+/*
+	'rdb_sha1' => 'md7xuilgNmftmBc03jYMVgAQuFE',
+	'fail' => 0,
+	'date' => 'Thu Mar  2 13:27:49 PST 2017',
+	'rdb_version' => 'rdb-v2-50-g0ea4e50',
+	'rdb_dir' => '/projects/stbgit/stblinux/git/clkgen/7429b0/current',
+	'clkgen_version' => 'clkgen-v4-283-g9f403e5-dirty',
+	'pm_ver' => '???',
+	'chip' => '7429b0',
+	'aliases' => {},
+	'unhandled_linux_funcs' => '',
+	'invocation' => 'clkgen.pl --sw_nodes -v -g -r -P -c 7429b0',
+	'num_clks' => 67,
+*/
+
+/ {
+	brcmstb-clks {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		reg = <0x10420000 0x51c 0x10408000 0x400>;
+		ranges;
+
+		genet0_alwayson: genet0_alwayson@104202d8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202d8 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+		};
+
+		genet0_sys_fast: genet0_sys_fast@104202d8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202d8 0x4>;
+			bit-shift = <1>;
+			set-bit-to-disable;
+		};
+
+		genet0_sys_pm: genet0_sys_pm@104202d8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202d8 0x4>;
+			bit-shift = <2>;
+			set-bit-to-disable;
+		};
+
+		genet0_sys_slow: genet0_sys_slow@104202d8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202d8 0x4>;
+			bit-shift = <3>;
+			set-bit-to-disable;
+		};
+
+		genet_25mhz: genet_25mhz@104202d8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202d8 0x4>;
+			bit-shift = <4>;
+			set-bit-to-disable;
+		};
+
+		genet1_alwayson: genet1_alwayson@10420514 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x10420514 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+		};
+
+		genet1_sys_fast: genet1_sys_fast@10420514 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x10420514 0x4>;
+			bit-shift = <1>;
+			set-bit-to-disable;
+		};
+
+		genet1_sys_pm: genet1_sys_pm@10420514 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x10420514 0x4>;
+			bit-shift = <2>;
+			set-bit-to-disable;
+		};
+
+		genet1_sys_slow: genet1_sys_slow@10420514 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x10420514 0x4>;
+			bit-shift = <3>;
+			set-bit-to-disable;
+		};
+
+		genet_scb: genet_scb@104202e0 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e0 0x4>;
+			bit-shift = <0>;
+		};
+
+		genet0_108: genet0_108@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <0>;
+		};
+
+		genet0_250: genet0_250@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <1>;
+		};
+
+		genet0_eee: sw_geneteee0: genet0_eee@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <2>;
+		};
+
+		genet0_gmii: genet0_gmii@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <3>;
+		};
+
+		genet0_hfb: genet0_hfb@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <4>;
+		};
+
+		genet0_l2intr: genet0_l2intr@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <5>;
+		};
+
+		genet0_scb: genet0_scb@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <6>;
+		};
+
+		genet0_umac_rx: genet0_umac_rx@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <7>;
+		};
+
+		genet0_umac_tx: genet0_umac_tx@104202e4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202e4 0x4>;
+			bit-shift = <8>;
+		};
+
+		genet1_108: genet1_108@104202ec {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202ec 0x4>;
+			bit-shift = <0>;
+		};
+
+		genet1_eee: sw_geneteee1: genet1_eee@104202ec {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202ec 0x4>;
+			bit-shift = <1>;
+		};
+
+		genet1_gmii: genet1_gmii@104202ec {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202ec 0x4>;
+			bit-shift = <2>;
+		};
+
+		genet1_hfb: genet1_hfb@104202ec {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202ec 0x4>;
+			bit-shift = <3>;
+		};
+
+		genet1_l2intr: genet1_l2intr@104202ec {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202ec 0x4>;
+			bit-shift = <4>;
+		};
+
+		genet1_scb: genet1_scb@104202ec {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202ec 0x4>;
+			bit-shift = <5>;
+		};
+
+		genet1_umac_rx: genet1_umac_rx@104202ec {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202ec 0x4>;
+			bit-shift = <6>;
+		};
+
+		genet1_umac_tx: genet1_umac_tx@104202ec {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202ec 0x4>;
+			bit-shift = <7>;
+		};
+
+		genet0_select: genet0_select@104202f8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202f8 0x4>;
+			bit-shift = <0>;
+		};
+
+		genet0_gmii_select: genet0_gmii_select@104202f8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202f8 0x4>;
+			bit-shift = <1>;
+		};
+
+		genet1_select: genet1_select@104202fc {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202fc 0x4>;
+			bit-shift = <0>;
+		};
+
+		genet1_gmii_select: genet1_gmii_select@104202fc {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104202fc 0x4>;
+			bit-shift = <1>;
+		};
+
+		moca_108: moca_108@1042038c {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x1042038c 0x4>;
+			bit-shift = <0>;
+		};
+
+		moca_scb: moca_scb@1042038c {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x1042038c 0x4>;
+			bit-shift = <1>;
+		};
+
+		sata3_108: sata3_108@10420440 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x10420440 0x4>;
+			bit-shift = <0>;
+		};
+
+		sata3_scb: sata3_scb@10420440 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x10420440 0x4>;
+			bit-shift = <1>;
+		};
+
+		sys0_dis_ch4: sys0_dis_ch4@104201a8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104201a8 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+		};
+
+		sys0_pdh_ch4: sys0_pdh_ch4@104201a8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104201a8 0x4>;
+			bit-shift = <12>;
+			set-bit-to-disable;
+			clocks = <&sys0_dis_ch4>;
+			clock-names = "sys0_dis_ch4";
+		};
+
+		usb0_usb_54_mdio: usb0_usb_54_mdio@10420494 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x10420494 0x4>;
+			bit-shift = <1>;
+			set-bit-to-disable;
+			clocks = <&sys0_pdh_ch4>;
+			clock-names = "sys0_pdh_ch4";
+		};
+
+		usb0_108: usb0_108@1042049c {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x1042049c 0x4>;
+			bit-shift = <0>;
+			clocks = <&sys0_pdh_ch4>;
+			clock-names = "sys0_pdh_ch4";
+		};
+
+		usb0_scb: usb0_scb@1042049c {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x1042049c 0x4>;
+			bit-shift = <1>;
+			clocks = <&sys0_pdh_ch4>;
+			clock-names = "sys0_pdh_ch4";
+		};
+
+		usb1_usb_54_mdio: usb1_usb_54_mdio@104204b0 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104204b0 0x4>;
+			bit-shift = <1>;
+			set-bit-to-disable;
+			clocks = <&sys0_pdh_ch4>;
+			clock-names = "sys0_pdh_ch4";
+		};
+
+		usb1_108: usb1_108@104204b8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104204b8 0x4>;
+			bit-shift = <0>;
+			clocks = <&sys0_pdh_ch4>;
+			clock-names = "sys0_pdh_ch4";
+		};
+
+		usb1_scb: usb1_scb@104204b8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104204b8 0x4>;
+			bit-shift = <1>;
+			clocks = <&sys0_pdh_ch4>;
+			clock-names = "sys0_pdh_ch4";
+		};
+
+		moca_pll_rsta: moca_pll_rsta@104200f4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200f4 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+		};
+
+		moca_pll_rstd: moca_pll_rstd@104200f4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200f4 0x4>;
+			bit-shift = <1>;
+			set-bit-to-disable;
+			clocks = <&moca_pll_rsta>;
+			clock-names = "moca_pll_rsta";
+		};
+
+		moca_pwrdn: moca_pwrdn@104200f0 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200f0 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+			clocks = <&moca_pll_rstd>;
+			clock-names = "moca_pll_rstd";
+		};
+
+		moca_dis_ch0: moca_dis_ch0@104200bc {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200bc 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+			clocks = <&moca_pwrdn>;
+			clock-names = "moca_pwrdn";
+		};
+
+		moca_pdh_ch0: moca_pdh_ch0@104200bc {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200bc 0x4>;
+			bit-shift = <12>;
+			set-bit-to-disable;
+			clocks = <&moca_dis_ch0>;
+			clock-names = "moca_dis_ch0";
+		};
+
+		moca_dis_ch1: moca_dis_ch1@104200c0 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200c0 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+			clocks = <&moca_pwrdn>;
+			clock-names = "moca_pwrdn";
+		};
+
+		moca_pdh_ch1: moca_pdh_ch1@104200c0 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200c0 0x4>;
+			bit-shift = <12>;
+			set-bit-to-disable;
+			clocks = <&moca_dis_ch1>;
+			clock-names = "moca_dis_ch1";
+		};
+
+		moca_dis_ch2: moca_dis_ch2@104200c4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200c4 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+			clocks = <&moca_pwrdn>;
+			clock-names = "moca_pwrdn";
+		};
+
+		moca_pdh_ch2: moca_pdh_ch2@104200c4 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200c4 0x4>;
+			bit-shift = <12>;
+			set-bit-to-disable;
+			clocks = <&moca_dis_ch2>;
+			clock-names = "moca_dis_ch2";
+		};
+
+		moca_dis_ch3: moca_dis_ch3@104200c8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200c8 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+			clocks = <&moca_pwrdn>;
+			clock-names = "moca_pwrdn";
+		};
+
+		moca_pdh_ch3: moca_pdh_ch3@104200c8 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200c8 0x4>;
+			bit-shift = <12>;
+			set-bit-to-disable;
+			clocks = <&moca_dis_ch3>;
+			clock-names = "moca_dis_ch3";
+		};
+
+		moca_dis_ch4: moca_dis_ch4@104200cc {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200cc 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+			clocks = <&moca_pwrdn>;
+			clock-names = "moca_pwrdn";
+		};
+
+		moca_pdh_ch4: sw_sdio: moca_pdh_ch4@104200cc {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200cc 0x4>;
+			bit-shift = <12>;
+			set-bit-to-disable;
+			clocks = <&moca_dis_ch4>;
+			clock-names = "moca_dis_ch4";
+		};
+
+		moca_dis_ch5: moca_dis_ch5@104200d0 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200d0 0x4>;
+			bit-shift = <0>;
+			set-bit-to-disable;
+			clocks = <&moca_pwrdn>;
+			clock-names = "moca_pwrdn";
+		};
+
+		moca_pdh_ch5: moca_pdh_ch5@104200d0 {
+			compatible = "brcm,brcmstb-gate-clk";
+			#clock-cells = <0>;
+			reg = <0x104200d0 0x4>;
+			bit-shift = <12>;
+			set-bit-to-disable;
+			clocks = <&moca_dis_ch5>;
+			clock-names = "moca_dis_ch5";
+		};
+
+		sw_genet0: sw_genet0 {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&genet0_alwayson>, <&genet0_sys_fast>,
+			  <&genet0_sys_pm>, <&genet0_sys_slow>,
+			  <&genet_25mhz>, <&genet_scb>, <&genet0_108>,
+			  <&genet0_eee>, <&genet0_gmii>, <&genet0_hfb>,
+			  <&genet0_l2intr>, <&genet0_scb>, <&genet0_umac_rx>,
+			  <&genet0_umac_tx>, <&genet0_250>;
+			clock-names = "genet0_alwayson", "genet0_sys_fast",
+			  "genet0_sys_pm", "genet0_sys_slow", "genet_25mhz",
+			  "genet_scb", "genet0_108", "genet0_eee",
+			  "genet0_gmii", "genet0_hfb", "genet0_l2intr",
+			  "genet0_scb", "genet0_umac_rx", "genet0_umac_tx",
+			  "genet0_250";
+		};
+
+		sw_genet1: sw_genet1 {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&genet_25mhz>, <&genet1_alwayson>,
+			  <&genet1_sys_fast>, <&genet1_sys_pm>,
+			  <&genet1_sys_slow>, <&genet_scb>, <&genet1_108>,
+			  <&genet1_eee>, <&genet1_gmii>, <&genet1_hfb>,
+			  <&genet1_l2intr>, <&genet1_scb>, <&genet1_umac_rx>,
+			  <&genet1_umac_tx>;
+			clock-names = "genet_25mhz", "genet1_alwayson",
+			  "genet1_sys_fast", "genet1_sys_pm",
+			  "genet1_sys_slow", "genet_scb", "genet1_108",
+			  "genet1_eee", "genet1_gmii", "genet1_hfb",
+			  "genet1_l2intr", "genet1_scb", "genet1_umac_rx",
+			  "genet1_umac_tx";
+		};
+
+		sw_genetwol0: sw_genetwol0 {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&genet0_250>, <&genet0_eee>,
+			  <&genet0_umac_tx>, <&genet0_select>,
+			  <&genet0_gmii_select>;
+			clock-names = "genet0_250", "genet0_eee",
+			  "genet0_umac_tx", "genet0_select",
+			  "genet0_gmii_select";
+		};
+
+		sw_genetwol1: sw_genetwol1 {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&genet1_eee>, <&genet1_umac_tx>,
+			  <&genet1_select>, <&genet1_gmii_select>;
+			clock-names = "genet1_eee", "genet1_umac_tx",
+			  "genet1_select", "genet1_gmii_select";
+		};
+
+		sw_moca: sw_moca {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&moca_108>, <&moca_scb>, <&moca_pdh_ch0>,
+			  <&moca_pdh_ch1>, <&moca_pdh_ch2>, <&moca_pdh_ch3>;
+			clock-names = "moca_108", "moca_scb", "moca_pdh_ch0",
+			  "moca_pdh_ch1", "moca_pdh_ch2", "moca_pdh_ch3";
+		};
+
+		sw_mocawol: sw_mocawol {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&moca_108>, <&moca_scb>;
+			clock-names = "moca_108", "moca_scb";
+		};
+
+		sw_sata3: sw_sata3 {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&sata3_108>, <&sata3_scb>;
+			clock-names = "sata3_108", "sata3_scb";
+		};
+
+		sw_usb0: sw_usb0 {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&usb0_usb_54_mdio>, <&usb0_108>,
+			  <&usb0_scb>, <&moca_pdh_ch5>;
+			clock-names = "usb0_usb_54_mdio", "usb0_108",
+			  "usb0_scb", "moca_pdh_ch5";
+		};
+
+		sw_usb1: sw_usb1 {
+			compatible = "brcm,brcmstb-sw-clk";
+			#clock-cells = <0>;
+			clocks = <&usb1_usb_54_mdio>, <&usb1_108>,
+			  <&usb1_scb>;
+			clock-names = "usb1_usb_54_mdio", "usb1_108",
+			  "usb1_scb";
+		};
+
+	};
+
+};
