@@ -109,6 +109,9 @@ enum pageflags {
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	PG_compound_lock,
 #endif
+#ifdef CONFIG_PAGE_AUTOMAP
+	PG_automap,
+#endif
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
@@ -533,6 +536,12 @@ static inline int PageTransTail(struct page *page)
 {
 	return 0;
 }
+#endif
+
+#ifdef CONFIG_PAGE_AUTOMAP
+PAGEFLAG(AutoMap, automap)
+#else
+TESTPAGEFLAG_FALSE(AutoMap)
 #endif
 
 /*

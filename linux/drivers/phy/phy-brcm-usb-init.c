@@ -986,6 +986,7 @@ static void usb_init_common(struct brcm_usb_init_params *params)
 			USB_CTRL_UNSET_FAMILY(params, USB_PM, BDC_SOFT_RESETB);
 			break;
 		default:
+			USB_CTRL_UNSET_FAMILY(params, USB_PM, BDC_SOFT_RESETB);
 			USB_CTRL_SET_FAMILY(params, USB_PM, BDC_SOFT_RESETB);
 		break;
 		}

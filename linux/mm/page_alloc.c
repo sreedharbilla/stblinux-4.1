@@ -4198,6 +4198,10 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		page_mapcount_reset(page);
 		page_cpupid_reset_last(page);
 		SetPageReserved(page);
+#ifdef CONFIG_PAGE_AUTOMAP
+		if (memblock_is_automap_memory(pfn << PAGE_SHIFT))
+			SetPageAutoMap(page);
+#endif
 		/*
 		 * Mark the block movable so that blocks are reserved for
 		 * movable at startup. This will force kernel allocations

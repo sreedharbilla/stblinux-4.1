@@ -24,7 +24,8 @@
 enum {
 	MEMBLOCK_NONE		= 0x0,	/* No special request */
 	MEMBLOCK_HOTPLUG	= 0x1,	/* hotpluggable region */
-	MEMBLOCK_NOMAP		= 0x4	/* don't add to kernel direct mapping */
+	MEMBLOCK_NOMAP		= 0x4,	/* don't add to kernel direct mapping */
+	MEMBLOCK_AUTOMAP	= 0x8	/* kernel direct map when user mapped */
 };
 
 struct memblock_region {
@@ -80,6 +81,7 @@ void memblock_trim_memory(phys_addr_t align);
 int memblock_mark_hotplug(phys_addr_t base, phys_addr_t size);
 int memblock_clear_hotplug(phys_addr_t base, phys_addr_t size);
 int memblock_mark_nomap(phys_addr_t base, phys_addr_t size);
+int memblock_mark_automap(phys_addr_t base, phys_addr_t size);
 
 /* Low level functions */
 int memblock_add_range(struct memblock_type *type,
@@ -165,6 +167,11 @@ static inline bool movable_node_is_enabled(void)
 static inline bool memblock_is_nomap(struct memblock_region *m)
 {
 	return m->flags & MEMBLOCK_NOMAP;
+}
+
+static inline bool memblock_is_automap(struct memblock_region *m)
+{
+	return m->flags & MEMBLOCK_AUTOMAP;
 }
 
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
@@ -303,6 +310,7 @@ phys_addr_t memblock_end_of_DRAM(void);
 void memblock_enforce_memory_limit(phys_addr_t memory_limit);
 int memblock_is_memory(phys_addr_t addr);
 int memblock_is_map_memory(phys_addr_t addr);
+int memblock_is_automap_memory(phys_addr_t addr);
 int memblock_is_region_memory(phys_addr_t base, phys_addr_t size);
 int memblock_is_reserved(phys_addr_t addr);
 int memblock_is_region_reserved(phys_addr_t base, phys_addr_t size);

@@ -212,6 +212,10 @@ config PAGEFLAGS_EXTENDED
 	def_bool y
 	depends on 64BIT || SPARSEMEM_VMEMMAP || !SPARSEMEM
 
+config PAGE_AUTOMAP
+	bool
+	depends on PAGEFLAGS_EXTENDED
+
 # Heavily threaded applications may benefit from splitting the mm-wide
 # page_table_lock, so that faults on different parts of the user address
 # space can be handled with less contention: split it at this NR_CPUS.
