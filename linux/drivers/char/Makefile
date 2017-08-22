@@ -64,3 +64,4 @@ obj-$(CONFIG_TILE_SROM)		+= tile-srom.o
 obj-$(CONFIG_XILLYBUS)		+= xillybus/
 
 obj-$(CONFIG_BRCM_MOCA)		+= bmoca.o
+obj-$(CONFIG_BRCM_BCM6802)	+= bcm6802.o

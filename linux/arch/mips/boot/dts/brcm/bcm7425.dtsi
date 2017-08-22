@@ -54,13 +54,10 @@
 			 <0x2000000 0x0 0xe0000000 0xe0000000 0 0x08000000>,
 			 <0x2000000 0x0 0xe8000000 0xe8000000 0 0x08000000>;
 		interrupt-map-mask = <0 0 0 7>;
-		interrupt-map = <0 0 0 1
-			&periph_intc 33 3 0
-			0 0 2 &periph_intc
-			34 3 0 0
-			0 3 &periph_intc 35
-			3 0 0 0
-			4 &periph_intc 36 3>;
+		interrupt-map = <0 0 0 1 &periph_intc 33
+				 0 0 0 2 &periph_intc 34
+				 0 0 0 3 &periph_intc 35
+				 0 0 0 4 &periph_intc 36>;
 		clocks = <&sw_pcie>;
 		clock-names = "sw_pcie";
 	};

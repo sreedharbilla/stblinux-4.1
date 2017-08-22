@@ -11,15 +11,13 @@ Required properties:
  #size-cells    : <1>
  mac-address	: 6-byte mac address
  rf-band	: rf band string, possible values "highrf, midrf, wanrf,
-		  ext_d, d_low, d_high, e, f, g
+		  ext_d, d_low, d_high, e, f, g"
  hw-rev		: HW revision number
  enet-id	: phandle to the internal ethernet phy (bcmgenet)
 
 Optional properties:
- use-dma	: boolean, indicating controller support for DMA
  i2c-base	: MoCA i2c base register address
  i2c-addr	: i2c slave address
- use-spi	: boolean, indicating controller support for spi interface
 
 Example:
 
