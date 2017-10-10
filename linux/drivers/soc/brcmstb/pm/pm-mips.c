@@ -22,6 +22,7 @@
 #include <linux/suspend.h>
 #include <asm/bmips.h>
 #include <asm/tlbflush.h>
+#include <soc/brcmstb/common.h>
 
 #include "pm.h"
 
@@ -346,9 +347,16 @@ static int brcmstb_pm_valid(suspend_state_t state)
 	}
 }
 
+static void brcmstb_pm_end(void)
+{
+	/* Clear magic s3 warm-boot value */
+	AON_SAVE_SRAM(ctrl.aon_sram_base, 0, 0);
+}
+
 static const struct platform_suspend_ops brcmstb_pm_ops = {
 	.enter		= brcmstb_pm_enter,
 	.valid		= brcmstb_pm_valid,
+	.end		= brcmstb_pm_end,
 };
 
 static const struct of_device_id aon_ctrl_dt_ids[] = {
@@ -453,7 +461,7 @@ static int brcmstb_pm_init(void)
 
 	suspend_set_ops(&brcmstb_pm_ops);
 
-	return 0;
+	return brcmstb_regsave_init();
 
 tmr_err:
 	iounmap(ctrl.memcs[0].arb_base);

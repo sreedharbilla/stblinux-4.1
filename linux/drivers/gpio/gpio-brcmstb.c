@@ -50,6 +50,7 @@ struct brcmstb_gpio_bank {
 	struct bgpio_chip bgc;
 	struct brcmstb_gpio_priv *parent_priv;
 	u32 width;
+	struct irq_chip_generic *icg;
 	u32 wake_active;
 	u32 regs[GIO_REG_STAT];
 };
@@ -57,12 +58,11 @@ struct brcmstb_gpio_bank {
 struct brcmstb_gpio_priv {
 	struct list_head bank_list;
 	void __iomem *reg_base;
-	int num_gpios;
 	struct platform_device *pdev;
-	struct irq_chip irq_chip;
 	struct irq_domain *irq_domain;
 	int parent_irq;
 	int gpio_base;
+	int num_gpios;
 	bool can_wake;
 	int parent_wake_irq;
 };
@@ -87,7 +87,7 @@ brcmstb_gpio_gc_to_priv(struct gpio_chip *gc)
 }
 
 static unsigned long
-brcmstb_gpio_get_active_irqs(struct brcmstb_gpio_bank *bank)
+__brcmstb_gpio_get_active_irqs(struct brcmstb_gpio_bank *bank)
 {
 	void __iomem *reg_base = bank->parent_priv->reg_base;
 
@@ -95,23 +95,17 @@ brcmstb_gpio_get_active_irqs(struct brcmstb_gpio_bank *bank)
 	       bank->bgc.read_reg(reg_base + GIO_MASK(bank->id));
 }
 
-static void brcmstb_gpio_set_imask(struct brcmstb_gpio_bank *bank,
-		unsigned int offset, bool enable)
+static unsigned long
+brcmstb_gpio_get_active_irqs(struct brcmstb_gpio_bank *bank)
 {
-	struct bgpio_chip *bgc = &bank->bgc;
-	struct brcmstb_gpio_priv *priv = bank->parent_priv;
-	u32 mask = bgc->pin2mask(bgc, offset);
-	u32 imask;
+	unsigned long status;
 	unsigned long flags;
 
-	spin_lock_irqsave(&bgc->lock, flags);
-	imask = bgc->read_reg(priv->reg_base + GIO_MASK(bank->id));
-	if (enable)
-		imask |= mask;
-	else
-		imask &= ~mask;
-	bgc->write_reg(priv->reg_base + GIO_MASK(bank->id), imask);
-	spin_unlock_irqrestore(&bgc->lock, flags);
+	irq_gc_lock_irqsave(bank->icg, flags);
+	status = __brcmstb_gpio_get_active_irqs(bank);
+	irq_gc_unlock_irqrestore(bank->icg, flags);
+
+	return status;
 }
 
 static int brcmstb_gpio_to_irq(struct gpio_chip *gc, unsigned gc_offset)
@@ -128,33 +122,15 @@ static int brcmstb_gpio_to_irq(struct gpio_chip *gc, unsigned gc_offset)
 /* -------------------- IRQ chip functions -------------------- */
 
 static int brcmstb_gpio_hwirq_to_offset(irq_hw_number_t hwirq,
-		struct brcmstb_gpio_bank *bank)
+					struct brcmstb_gpio_bank *bank)
 {
 	return hwirq - (bank->bgc.gc.base - bank->parent_priv->gpio_base);
 }
 
-static void brcmstb_gpio_irq_mask(struct irq_data *d)
-{
-	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
-	struct brcmstb_gpio_bank *bank = brcmstb_gpio_gc_to_bank(gc);
-	int offset = brcmstb_gpio_hwirq_to_offset(d->hwirq, bank);
-
-	brcmstb_gpio_set_imask(bank, offset, false);
-}
-
-static void brcmstb_gpio_irq_unmask(struct irq_data *d)
-{
-	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
-	struct brcmstb_gpio_bank *bank = brcmstb_gpio_gc_to_bank(gc);
-	int offset = brcmstb_gpio_hwirq_to_offset(d->hwirq, bank);
-
-	brcmstb_gpio_set_imask(bank, offset, true);
-}
-
 static int brcmstb_gpio_irq_set_type(struct irq_data *d, unsigned int type)
 {
-	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
-	struct brcmstb_gpio_bank *bank = brcmstb_gpio_gc_to_bank(gc);
+	struct irq_chip_generic *icg = irq_data_get_irq_chip_data(d);
+	struct brcmstb_gpio_bank *bank = icg->private;
 	struct brcmstb_gpio_priv *priv = bank->parent_priv;
 	u32 mask = BIT(brcmstb_gpio_hwirq_to_offset(d->hwirq, bank));
 	u32 edge_insensitive, iedge_insensitive;
@@ -229,9 +205,9 @@ static int brcmstb_gpio_priv_set_wake(struct brcmstb_gpio_priv *priv,
 
 static int brcmstb_gpio_irq_set_wake(struct irq_data *d, unsigned int enable)
 {
-	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
-	struct brcmstb_gpio_priv *priv = brcmstb_gpio_gc_to_priv(gc);
-	struct brcmstb_gpio_bank *bank = brcmstb_gpio_gc_to_bank(gc);
+	struct irq_chip_generic *icg = irq_data_get_irq_chip_data(d);
+	struct brcmstb_gpio_bank *bank = icg->private;
+	struct brcmstb_gpio_priv *priv = bank->parent_priv;
 	u32 mask = BIT(brcmstb_gpio_hwirq_to_offset(d->hwirq, bank));
 
 	/* Do not do anything specific for now, suspend/resume callbacks will
@@ -261,31 +237,19 @@ static void brcmstb_gpio_irq_bank_handler(struct brcmstb_gpio_bank *bank)
 	struct brcmstb_gpio_priv *priv = bank->parent_priv;
 	struct irq_domain *domain = priv->irq_domain;
 	int hwbase = bank->bgc.gc.base - priv->gpio_base;
-	void __iomem *reg_base = priv->reg_base;
 	unsigned long status;
-	unsigned long flags;
+	unsigned int irq;
 
-	spin_lock_irqsave(&bank->bgc.lock, flags);
 	while ((status = brcmstb_gpio_get_active_irqs(bank))) {
-		int bit;
-
-		/* Ack the status bits we are about to service */
-		bank->bgc.write_reg(reg_base + GIO_STAT(bank->id),
-				    status);
-		spin_unlock_irqrestore(&bank->bgc.lock, flags);
-
-		for_each_set_bit(bit, &status, 32) {
-			int hwirq = hwbase + bit;
-			if (bit >= bank->width)
+		for_each_set_bit(irq, &status, 32) {
+			if (irq >= bank->width)
 				dev_warn(&priv->pdev->dev,
 					 "IRQ for invalid GPIO (bank=%d, offset=%d)\n",
-					 bank->id, bit);
-			generic_handle_irq(irq_find_mapping(domain, hwirq));
+					 bank->id, irq);
+			irq = irq_linear_revmap(domain, irq + hwbase);
+			generic_handle_irq(irq);
 		}
-
-		spin_lock_irqsave(&bank->bgc.lock, flags);
 	}
-	spin_unlock_irqrestore(&bank->bgc.lock, flags);
 }
 
 /* Each UPG GIO block has one IRQ for all banks */
@@ -316,67 +280,6 @@ static void brcmstb_gpio_irq_handler(unsigned int irq, struct irq_desc *desc)
 		brcmstb_gpio_irq_bank_handler(bank);
 	chained_irq_exit(chip, desc);
 }
-
-static struct brcmstb_gpio_bank *brcmstb_gpio_hwirq_to_bank(
-		struct brcmstb_gpio_priv *priv, irq_hw_number_t hwirq)
-{
-	struct brcmstb_gpio_bank *bank;
-	int i = 0;
-
-	/* banks are in descending order */
-	list_for_each_entry_reverse(bank, &priv->bank_list, node) {
-		i += bank->bgc.gc.ngpio;
-		if (hwirq < i)
-			return bank;
-	}
-	return NULL;
-}
-
-/*
- * This lock class tells lockdep that GPIO irqs are in a different
- * category than their parents, so it won't report false recursion.
- */
-static struct lock_class_key brcmstb_gpio_irq_lock_class;
-
-
-static int brcmstb_gpio_irq_map(struct irq_domain *d, unsigned int irq,
-		irq_hw_number_t hwirq)
-{
-	struct brcmstb_gpio_priv *priv = d->host_data;
-	struct brcmstb_gpio_bank *bank =
-		brcmstb_gpio_hwirq_to_bank(priv, hwirq);
-	struct platform_device *pdev = priv->pdev;
-	int ret;
-
-	if (!bank)
-		return -EINVAL;
-
-	dev_dbg(&pdev->dev, "Mapping irq %d for gpio line %d (bank %d)\n",
-		irq, (int)hwirq, bank->id);
-	ret = irq_set_chip_data(irq, &bank->bgc.gc);
-	if (ret < 0)
-		return ret;
-	irq_set_lockdep_class(irq, &brcmstb_gpio_irq_lock_class);
-	irq_set_chip_and_handler(irq, &priv->irq_chip, handle_simple_irq);
-#ifdef CONFIG_ARM
-	set_irq_flags(irq, IRQF_VALID);
-#else
-	irq_set_noprobe(irq);
-#endif
-	return 0;
-}
-
-static void brcmstb_gpio_irq_unmap(struct irq_domain *d, unsigned int irq)
-{
-	irq_set_chip_and_handler(irq, NULL, NULL);
-	irq_set_chip_data(irq, NULL);
-}
-
-static struct irq_domain_ops brcmstb_gpio_irq_domain_ops = {
-	.map = brcmstb_gpio_irq_map,
-	.unmap = brcmstb_gpio_irq_unmap,
-	.xlate = irq_domain_xlate_twocell,
-};
 
 /* Make sure that the number of banks matches up between properties */
 static int brcmstb_gpio_sanity_check_banks(struct device *dev,
@@ -421,8 +324,8 @@ static int brcmstb_gpio_remove(struct platform_device *pdev)
 static int brcmstb_gpio_of_xlate(struct gpio_chip *gc,
 		const struct of_phandle_args *gpiospec, u32 *flags)
 {
-	struct brcmstb_gpio_priv *priv = brcmstb_gpio_gc_to_priv(gc);
 	struct brcmstb_gpio_bank *bank = brcmstb_gpio_gc_to_bank(gc);
+	struct brcmstb_gpio_priv *priv = bank->parent_priv;
 	int offset;
 
 	if (gc->of_gpio_n_cells != 2) {
@@ -455,15 +358,36 @@ static int brcmstb_gpio_irq_setup(struct platform_device *pdev,
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
+	struct brcmstb_gpio_bank *bank;
+	struct irq_chip_generic *gc;
+	struct irq_chip_type *ct;
+	unsigned int clr = IRQ_NOREQUEST | IRQ_NOPROBE | IRQ_NOAUTOEN;
+	unsigned int flags;
+	int ret, hw_int;
 
-	priv->irq_chip.name = dev_name(dev);
-	priv->irq_chip.irq_disable = brcmstb_gpio_irq_mask;
-	priv->irq_chip.irq_mask = brcmstb_gpio_irq_mask;
-	priv->irq_chip.irq_unmask = brcmstb_gpio_irq_unmask;
-	priv->irq_chip.irq_set_type = brcmstb_gpio_irq_set_type;
+	priv->irq_domain = irq_domain_add_linear(np, priv->num_gpios,
+						 &irq_generic_chip_ops,
+						 priv);
+	if (!priv->irq_domain) {
+		dev_err(dev, "Couldn't allocate IRQ domain\n");
+		return -ENXIO;
+	}
 
-	/* Ensures that interrupts are masked when changing their type  */
-	priv->irq_chip.flags = IRQCHIP_SET_TYPE_MASKED;
+	/* MIPS chips strapped for BE will automagically configure the
+	 * peripheral registers for CPU-native byte order.
+	 */
+	flags = IRQ_GC_INIT_MASK_CACHE;
+	if (IS_ENABLED(CONFIG_MIPS) && IS_ENABLED(CONFIG_CPU_BIG_ENDIAN))
+		flags |= IRQ_GC_BE_IO;
+
+	ret = irq_alloc_domain_generic_chips(priv->irq_domain,
+					     MAX_GPIO_PER_BANK, 1,
+					     dev_name(dev),
+					     handle_level_irq, clr, 0, flags);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to allocate generic irq chip\n");
+		goto out_free_domain;
+	}
 
 	if (of_property_read_bool(np, "wakeup-source")) {
 		priv->parent_wake_irq = platform_get_irq(pdev, 1);
@@ -471,46 +395,57 @@ static int brcmstb_gpio_irq_setup(struct platform_device *pdev,
 			dev_warn(dev,
 				"Couldn't get wake IRQ - GPIOs will not be able to wake from sleep");
 		} else {
-			int err;
-
 			/*
 			 * Set wakeup capability so we can process boot-time
 			 * "wakeups" (e.g., from S5 cold boot)
 			 */
 			device_set_wakeup_capable(dev, true);
 			device_wakeup_enable(dev);
-			err = devm_request_irq(dev, priv->parent_wake_irq,
+			ret = devm_request_irq(dev, priv->parent_wake_irq,
 					brcmstb_gpio_wake_irq_handler, IRQF_SHARED,
 					"brcmstb-gpio-wake", priv);
 
-			if (err < 0) {
+			if (ret < 0) {
 				dev_err(dev, "Couldn't request wake IRQ");
-				return err;
+				goto out_free_domain;
 			}
 
 			priv->can_wake = true;
 		}
 	}
 
-	if (priv->can_wake)
-		priv->irq_chip.irq_set_wake = brcmstb_gpio_irq_set_wake;
-	else
-		/* Ensures that all non-wakeup IRQs are disabled at suspend */
-		priv->irq_chip.flags |= IRQCHIP_MASK_ON_SUSPEND;
-
-	priv->irq_domain =
-		irq_domain_add_linear(np, priv->num_gpios,
-				      &brcmstb_gpio_irq_domain_ops,
-				      priv);
-	if (!priv->irq_domain) {
-		dev_err(dev, "Couldn't allocate IRQ domain\n");
-		return -ENXIO;
+	list_for_each_entry(bank, &priv->bank_list, node) {
+		hw_int = bank->id * MAX_GPIO_PER_BANK;
+		gc = irq_get_domain_generic_chip(priv->irq_domain, hw_int);
+		gc->reg_base = priv->reg_base + bank->id * GIO_BANK_SIZE;
+		gc->unused = -(1 << bank->width);
+		gc->private = bank;
+		ct = gc->chip_types;
+		ct->regs.mask = GIO_MASK(0);
+		ct->regs.ack = GIO_STAT(0);
+		ct->chip.irq_ack = irq_gc_ack_set_bit;
+		ct->chip.irq_mask = irq_gc_mask_clr_bit;
+		ct->chip.irq_unmask = irq_gc_mask_set_bit;
+		ct->chip.irq_mask_ack = irq_gc_mask_clr_and_ack_set;
+		ct->chip.irq_set_type = brcmstb_gpio_irq_set_type;
+		ct->chip.irq_disable = irq_gc_mask_clr_bit;
+		/* Ensure that interrupts are masked when changing type */
+		ct->chip.flags = IRQCHIP_SET_TYPE_MASKED;
+		if (priv->can_wake)
+			ct->chip.irq_set_wake = brcmstb_gpio_irq_set_wake;
+		bank->icg = gc;
 	}
+
 	irq_set_chained_handler(priv->parent_irq,
 				brcmstb_gpio_irq_handler);
 	irq_set_handler_data(priv->parent_irq, priv);
 
 	return 0;
+
+out_free_domain:
+	irq_domain_remove(priv->irq_domain);
+
+	return ret;
 }
 
 static void brcmstb_gpio_bank_save(struct brcmstb_gpio_priv *priv,
@@ -582,7 +517,7 @@ static int brcmstb_gpio_resume(struct device *dev)
 	u32 wake_mask = 0;
 
 	list_for_each_entry(bank, &priv->bank_list, node) {
-		wake_mask |= brcmstb_gpio_get_active_irqs(bank);
+		wake_mask |= __brcmstb_gpio_get_active_irqs(bank);
 		brcmstb_gpio_bank_restore(priv, bank);
 	}
 
@@ -713,8 +648,8 @@ static int brcmstb_gpio_probe(struct platform_device *pdev)
 		 * Mask all interrupts by default, since wakeup interrupts may
 		 * be retained from S5 cold boot
 		 */
-		wake_mask |= brcmstb_gpio_get_active_irqs(bank);
-		bank->bgc.write_reg(reg_base + GIO_MASK(bank->id), 0);
+		wake_mask |= __brcmstb_gpio_get_active_irqs(bank);
+		bgc->write_reg(reg_base + GIO_MASK(bank->id), 0);
 
 		err = gpiochip_add(gc);
 		if (err) {

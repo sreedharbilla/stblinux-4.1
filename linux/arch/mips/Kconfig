@@ -166,6 +166,7 @@ config BMIPS_GENERIC
 	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select HW_HAS_PCI
 	select MIPS_GENERIC_PCI
+	select PCI_DRIVERS_GENERIC
 	select PINCTRL
 	select PINCTRL_SINGLE
 	select SOC_BRCMSTB
@@ -2733,15 +2734,11 @@ config HW_HAS_EISA
 	bool
 config HW_HAS_PCI
 	bool
-config MIPS_GENERIC_PCI
-	bool
 
 config PCI
 	bool "Support for PCI controller"
 	depends on HW_HAS_PCI
 	select PCI_DOMAINS
-	select PCI_DOMAINS_GENERIC if MIPS_GENERIC_PCI
-	select NO_GENERIC_PCI_IOPORT_MAP
 	help
 	  Find out whether you have a PCI motherboard. PCI is the name of a
 	  bus system, i.e. the way the CPU talks to the other stuff inside
@@ -2764,6 +2761,14 @@ config PCI_DOMAINS
 
 config PCI_DOMAINS_GENERIC
 	bool
+
+config PCI_DRIVERS_GENERIC
+	select PCI_DOMAINS_GENERIC if PCI_DOMAINS
+	bool
+
+config PCI_DRIVERS_LEGACY
+	def_bool !PCI_DRIVERS_GENERIC
+	select NO_GENERIC_PCI_IOPORT_MAP
 
 source "drivers/pci/Kconfig"
 

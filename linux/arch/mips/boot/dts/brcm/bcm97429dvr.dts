@@ -16,6 +16,18 @@
 		bootargs = "console=ttyS0,115200 earlyprintk";
 		stdout-path = &uart0;
 	};
+
+	rdb {
+		sun_top_ctrl_general_no_scan0: syscon@4040a4 {
+			compatible = "brcm,bcm7429-sun-top-ctrl-general-no-scan", "syscon";
+			reg = <0x4040a4 0x4>;
+		};
+	};
+
+	/* Save the RGMII voltage settings */
+	s3 {
+		syscon-refs = <&sun_top_ctrl_general_no_scan0>;
+	};
 };
 
 &uart0 {
@@ -100,7 +112,7 @@
 &brcm_pmx_core {
 	status = "okay";
 	pinctrl-names = "default";
-	pinctrl-0 = <&moca_bsc_m3_pins>;
+	pinctrl-0 = <&moca_bsc_m3_pins>, <&genet_0_mii_pins>;
 
 	sdio0_core_pins: pinmux_sdio0_pins {
 		pinctrl-single,bits = <
@@ -126,6 +138,31 @@
 			0x6c 0x20000000 0x30000000 /* gpio_129 <- SDIO0_DAT3 */
 			0x70 0x00000002 0x00000003 /* gpio_130 <- SDIO0_PRES */
 			0x70 0x00000008 0x0000000c /* gpio_131 <- SDIO0_LED */
+		>;
+	};
+
+	genet_0_mii_pins: genet_mii_pins {
+		/* Intentionally do not pinmux MII_MDIO and MII_MDC such that
+		 * even with this configuration selected, the internal PHY
+		 * remains usable
+		 */
+		pinctrl-single,bits = <
+			0x3c 0x10000000 0xf0000000 /* gpio_132 <- MII_RX_DV */
+			0x40 0x00000001 0x0000000f /* gpio_133 <- MII_RX_ER */
+			0x40 0x00000010 0x000000f0 /* gpio_134 <- MII_RX_CLK */
+			0x40 0x00000100 0x00000f00 /* gpio_135 <- MII_COL */
+			0x40 0x00001000 0x0000f000 /* gpio_136 <- MII_CRS */
+			0x40 0x00100000 0x00f00000 /* gpio_138 <- MII_TX_CLK */
+			0x40 0x01000000 0x0f000000 /* gpiO_139 <- MII_RXD_03 */
+			0x40 0x10000000 0xf0000000 /* gpiO_140 <- MII_RXD_02 */
+			0x44 0x00000001 0x0000000f /* gpio_141 <- MII_RXD_01 */
+			0x44 0x00000010 0x000000f0 /* gpio_142 <- MII_RXD_00 */
+			0x44 0x00000100 0x00000f00 /* gpio_143 <- MII_TXD_03 */
+			0x44 0x00001000 0x0000f000 /* gpio_144 <- MII_TXD_02 */
+			0x44 0x00010000 0x000f0000 /* gpio_145 <- MII_TXD_01 */
+			0x44 0x00100000 0x00f00000 /* gpio_146 <- MII_TXD_00 */
+			0x44 0x01000000 0x0f000000 /* gpio_147 <- MII_TX_EN */
+			0x44 0x10000000 0xf0000000 /* gpio_148 <- MII_TX_ER */
 		>;
 	};
 

@@ -824,6 +824,13 @@ static int dsa_slave_set_rxnfc(struct net_device *dev,
 	return ds->drv->set_rxnfc(ds, p->port, nfc);
 }
 
+static u16 dsa_slave_select_queue(struct net_device *dev, struct sk_buff *skb,
+				  void *accel_priv,
+				  select_queue_fallback_t fallback)
+{
+	return skb_get_queue_mapping(skb);
+}
+
 static const struct ethtool_ops dsa_slave_ethtool_ops = {
 	.get_settings		= dsa_slave_get_settings,
 	.set_settings		= dsa_slave_set_settings,
@@ -866,6 +873,7 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
 	.ndo_poll_controller	= dsa_slave_poll_controller,
 #endif
 	.ndo_get_phys_port_name	= dsa_slave_get_phys_port_name,
+	.ndo_select_queue	= dsa_slave_select_queue,
 };
 
 static const struct swdev_ops dsa_slave_swdev_ops = {
@@ -1053,8 +1061,12 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	struct dsa_slave_priv *p;
 	int ret;
 
-	slave_dev = alloc_netdev(sizeof(struct dsa_slave_priv), name,
-				 NET_NAME_UNKNOWN, ether_setup);
+	if (!ds->num_tx_queues)
+		ds->num_tx_queues = 1;
+
+	slave_dev = alloc_netdev_mqs(sizeof(struct dsa_slave_priv), name,
+				     NET_NAME_UNKNOWN, ether_setup,
+				     ds->num_tx_queues, 1);
 	if (slave_dev == NULL)
 		return -ENOMEM;
 
@@ -1142,10 +1154,19 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	return 0;
 }
 
-static bool dsa_slave_dev_check(struct net_device *dev)
+bool dsa_slave_dev_check(struct net_device *dev)
 {
 	return dev->netdev_ops == &dsa_slave_netdev_ops;
 }
+EXPORT_SYMBOL_GPL(dsa_slave_dev_check);
+
+unsigned int dsa_slave_dev_port_num(struct net_device *dev)
+{
+	struct dsa_slave_priv *p = netdev_priv(dev);
+
+	return p->port;
+}
+EXPORT_SYMBOL_GPL(dsa_slave_dev_port_num);
 
 static int dsa_slave_master_changed(struct net_device *dev)
 {

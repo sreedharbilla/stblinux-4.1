@@ -1,138 +1,52 @@
 /*
- * This program is free software; you can redistribute	it and/or modify it
- * under  the terms of	the GNU General	 Public License as published by the
+ * Copyright (C) 2016 Imagination Technologies
+ * Author: Paul Burton <paul.burton@imgtec.com>
+ *
+ * pcibios_align_resource taken from arch/arm/kernel/bios32.c.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
- *
- * Copyright (C) 2003, 04, 11 Ralf Baechle (ralf@linux-mips.org)
- * Copyright (C) 2011 Wind River Systems,
- *   written by Ralf Baechle (ralf@linux-mips.org)
  */
 
 #include <linux/pci.h>
 
-int __weak pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+/*
+ * We need to avoid collisions with `mirrored' VGA ports
+ * and other strange ISA hardware, so we always want the
+ * addresses to be allocated in the 0x000-0x0ff region
+ * modulo 0x400.
+ *
+ * Why? Because some silly external IO cards only decode
+ * the low 10 bits of the IO address. The 0x00-0xff region
+ * is reserved for motherboard devices that decode all 16
+ * bits, so it's ok to allocate at, say, 0x2800-0x28ff,
+ * but we want to try to avoid allocating at 0x2900-0x2bff
+ * which might have be mirrored at 0x0100-0x03ff..
+ */
+resource_size_t pcibios_align_resource(void *data, const struct resource *res,
+				resource_size_t size, resource_size_t align)
 {
-	struct pci_sys_data *sysdata = dev->sysdata;
-	struct pci_controller *ctl = sysdata_to_hose(sysdata);
+	struct pci_dev *dev = data;
+	resource_size_t start = res->start;
+	struct pci_host_bridge *host_bridge;
 
-	if (!ctl->map_irq)
-		return -1;
+	if (res->flags & IORESOURCE_IO && start & 0x300)
+		start = (start + 0x3ff) & ~0x3ff;
 
-	return ctl->map_irq(dev, slot, pin);
-}
+	start = (start + align - 1) & ~(align - 1);
 
-void pci_common_init_dev(struct device *parent, struct hw_pci *hw)
-{
-	struct pci_controller *ctl;
-	struct resource_entry *window;
-	struct resource **ctl_res;
-	int i, ret, next_busnr = 0;
+	host_bridge = pci_find_host_bridge(dev->bus);
 
-	for (i = 0; i < hw->nr_controllers; i++) {
-		ctl = kzalloc(sizeof(*ctl), GFP_KERNEL);
-		if (!ctl) {
-			pr_err("%s: unable to allocate pci_controller\n",
-			       __func__);
-			continue;
-		}
+	if (host_bridge->align_resource)
+		return host_bridge->align_resource(dev, res,
+				start, size, align);
 
-		ctl->pci_ops = hw->ops;
-		ctl->align_resource = hw->align_resource;
-		ctl->map_irq = hw->map_irq;
-
-		INIT_LIST_HEAD(&ctl->sysdata.resources);
-
-		if (hw->private_data)
-			ctl->sysdata.private_data = hw->private_data[i];
-
-		ctl->sysdata.busnr = next_busnr;
-#ifdef CONFIG_PCI_MSI
-		ctl->sysdata.msi_ctrl = hw->msi_ctrl;
-#endif
-
-		if (hw->preinit)
-			hw->preinit();
-
-		ret = hw->setup(i, &ctl->sysdata);
-		if (ret <= 0) {
-			pr_err("%s: unable to setup controller: %d\n",
-			       __func__, ret);
-			kfree(ctl);
-			continue;
-		}
-
-		resource_list_for_each_entry(window, &ctl->sysdata.resources) {
-			switch (resource_type(window->res)) {
-			case IORESOURCE_IO:
-				ctl_res = &ctl->io_resource;
-				break;
-
-			case IORESOURCE_MEM:
-				ctl_res = &ctl->mem_resource;
-				break;
-
-			default:
-				ctl_res = NULL;
-			}
-
-			if (!ctl_res)
-				continue;
-
-			if (*ctl_res) {
-				pr_warn("%s: multiple resources of type 0x%lx\n",
-					__func__, resource_type(window->res));
-				continue;
-			}
-
-			*ctl_res = window->res;
-		}
-
-		if (hw->scan)
-			ctl->bus = hw->scan(i, &ctl->sysdata);
-		else
-			ctl->bus = pci_scan_root_bus(parent,
-					ctl->sysdata.busnr,
-					hw->ops, &ctl->sysdata,
-					&ctl->sysdata.resources);
-
-		add_pci_controller(ctl);
-
-		if (hw->postinit)
-			hw->postinit();
-
-		pci_fixup_irqs(pci_common_swizzle, pcibios_map_irq);
-
-		if (ctl->bus) {
-			if (!pci_has_flag(PCI_PROBE_ONLY)) {
-				pci_bus_size_bridges(ctl->bus);
-				pci_bus_assign_resources(ctl->bus);
-			}
-
-			pci_bus_add_devices(ctl->bus);
-			next_busnr = ctl->bus->busn_res.end + 1;
-		}
-	}
+	return start;
 }
 
 void pcibios_fixup_bus(struct pci_bus *bus)
 {
 	pci_read_bridge_bases(bus);
 }
-
-int pcibios_enable_device(struct pci_dev *dev, int mask)
-{
-	if (pci_has_flag(PCI_PROBE_ONLY))
-		return 0;
-
-	return pci_enable_resources(dev, mask);
-}
-
-#ifdef CONFIG_PCI_MSI
-struct msi_controller *pcibios_msi_controller(struct pci_dev *dev)
-{
-	struct pci_sys_data *sysdata = dev->sysdata;
-
-	return sysdata->msi_ctrl;
-}
-#endif

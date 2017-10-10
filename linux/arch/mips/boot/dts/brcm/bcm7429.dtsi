@@ -31,6 +31,8 @@
 	};
 
 	aliases {
+		eth0 = &enet0;
+		eth1 = &enet1;
 		uart0 = &uart0;
 		sdhci0 = &sdhci0;
 		sdhci1 = &sdhci1;

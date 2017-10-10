@@ -171,6 +171,9 @@ struct dsa_switch {
 	u32			phys_mii_mask;
 	struct mii_bus		*slave_mii_bus;
 	struct net_device	*ports[DSA_MAX_PORTS];
+
+	/* Number of switch port queues */
+	unsigned int		num_tx_queues;
 };
 
 static inline bool dsa_is_cpu_port(struct dsa_switch *ds, int p)
@@ -341,4 +344,25 @@ int dsa_slave_fill_info(struct net_device *dev, struct sk_buff *skb,
 			       bool is_static,
 			       u32 portid, u32 seq, int type,
 			       unsigned int flags);
+
+#if IS_ENABLED(CONFIG_NET_DSA)
+bool dsa_slave_dev_check(struct net_device *dev);
+unsigned int dsa_slave_dev_port_num(struct net_device *dev);
+#else
+static inline bool dsa_slave_dev_check(struct net_device *dev)
+{
+	return false;
+}
+
+static inline unsigned int dsa_slave_dev_port_num(struct net_device *dev)
+{
+	return DSA_MAX_PORTS;
+}
+#endif
+
+/* Broadcom tag specific */
+#define BRCM_TAG_SET_PORT_QUEUE(p, q)	((p) << 8 | q)
+#define BRCM_TAG_GET_PORT(v)		((v) >> 8)
+#define BRCM_TAG_GET_QUEUE(v)		((v) & 0xff)
+
 #endif

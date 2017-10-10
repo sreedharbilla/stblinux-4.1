@@ -3,12 +3,8 @@
 #
 
 obj-y				+= pci.o
-
-ifeq ($(CONFIG_MIPS_GENERIC_PCI),y)
-obj-y				+= pci-generic.o
-else
-obj-y				+= pci-legacy.o
-endif
+obj-$(CONFIG_PCI_DRIVERS_LEGACY)+= pci-legacy.o
+obj-$(CONFIG_PCI_DRIVERS_GENERIC)+= pci-generic.o
 
 #
 # PCI bus host bridge specific code
