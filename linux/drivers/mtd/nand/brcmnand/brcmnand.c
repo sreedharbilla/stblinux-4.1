@@ -174,6 +174,7 @@ struct brcmnand_controller {
 	unsigned int		irq;
 	unsigned int		dma_irq;
 	int			nand_version;
+	int			long_regs;
 
 	/* Some SoCs provide custom interrupt status register(s) */
 	struct brcmnand_soc	*soc;
@@ -547,9 +548,10 @@ static int brcmnand_revision_init(struct brcmnand_controller *ctrl)
 		return -ENODEV;
 	}
 
-	if (ctrl->nand_version >= 0x0703)
+	if (of_machine_is_compatible("brcm,bcm7278a0")) {
 		ctrl->reg_offsets = brcmnand_regs_v73;
-	else if (ctrl->nand_version == 0x0702)
+		ctrl->long_regs = 1;
+	} else if (ctrl->nand_version >= 0x0702)
 		ctrl->reg_offsets = brcmnand_regs_v72;
 	else if (ctrl->nand_version == 0x0701)
 		ctrl->reg_offsets = brcmnand_regs_v71;
@@ -701,7 +703,7 @@ static inline void brcmnand_write_fc(struct brcmnand_controller *ctrl,
 static inline void brcmnand_clear_ecc_addr(struct brcmnand_controller *ctrl)
 {
 
-	if (ctrl->nand_version >= 0x0703) {
+	if (ctrl->long_regs) {
 		/* Clear error addresses */
 		brcmnand_write_reg_lr(ctrl, BRCMNAND_UNCORR_ADDR_LR, 0);
 		brcmnand_write_reg_lr(ctrl, BRCMNAND_CORR_ADDR_LR, 0);
@@ -718,7 +720,7 @@ static inline u64 brcmnand_get_uncorrecc_addr(struct brcmnand_controller *ctrl)
 {
 	u64 err_addr;
 
-	if (ctrl->nand_version >= 0x0703) {
+	if (ctrl->long_regs) {
 		err_addr = brcmnand_read_reg_lr(ctrl, BRCMNAND_UNCORR_ADDR_LR);
 	} else {
 		err_addr = brcmnand_read_reg(ctrl, BRCMNAND_UNCORR_ADDR);
@@ -734,7 +736,7 @@ static inline u64 brcmnand_get_correcc_addr(struct brcmnand_controller *ctrl)
 {
 	u64 err_addr;
 
-	if (ctrl->nand_version >= 0x0703) {
+	if (ctrl->long_regs) {
 		err_addr = brcmnand_read_reg_lr(ctrl, BRCMNAND_CORR_ADDR_LR);
 	} else {
 		err_addr = brcmnand_read_reg(ctrl, BRCMNAND_CORR_ADDR);
@@ -752,7 +754,7 @@ static inline void brcmnand_set_cmd_addr(struct mtd_info *mtd, u64 addr)
 	struct brcmnand_host *host = chip->priv;
 	struct brcmnand_controller *ctrl = host->ctrl;
 
-	if (ctrl->nand_version >= 0x0703) {
+	if (ctrl->long_regs) {
 		/* use 64-bit flash address register */
 		addr = (addr & FLASH_ADDR_MASK64) | (u64)host->cs << 48;
 		brcmnand_write_reg_lr(ctrl, BRCMNAND_CMD_ADDRESS_LR, addr);
@@ -1345,7 +1347,7 @@ static void brcmnand_send_cmd(struct brcmnand_host *host, int cmd)
 	u32 mask = NAND_CTRL_RDY;
 	u64 cmd_addr;
 
-	if (ctrl->nand_version >= 0x0703) {
+	if (ctrl->long_regs) {
 		cmd_addr = brcmnand_read_reg_lr(ctrl, BRCMNAND_CMD_ADDRESS_LR);
 		cmd_addr &= FLASH_ADDR_MASK64;
 	} else {

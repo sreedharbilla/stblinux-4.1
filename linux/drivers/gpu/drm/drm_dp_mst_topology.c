@@ -330,6 +330,13 @@ static bool drm_dp_sideband_msg_build(struct drm_dp_sideband_msg_rx *msg,
 			return false;
 		}
 
+		/*
+		 * ignore out-of-order messages or messages that are part of a
+		 * failed transaction
+		 */
+		if (!recv_hdr.somt && !msg->have_somt)
+			return false;
+
 		/* get length contained in this portion */
 		msg->curchunk_len = recv_hdr.msg_len;
 		msg->curchunk_hdrlen = hdrlen;
@@ -798,11 +805,32 @@ static struct drm_dp_mst_branch *drm_dp_add_mst_branch_device(u8 lct, u8 *rad)
 	return mstb;
 }
 
+static void drm_dp_free_mst_port(struct kref *kref);
+
+static void drm_dp_free_mst_branch_device(struct kref *kref)
+{
+	struct drm_dp_mst_branch *mstb = container_of(kref, struct drm_dp_mst_branch, kref);
+	if (mstb->port_parent) {
+		if (list_empty(&mstb->port_parent->next))
+			kref_put(&mstb->port_parent->kref, drm_dp_free_mst_port);
+	}
+	kfree(mstb);
+}
+
 static void drm_dp_destroy_mst_branch_device(struct kref *kref)
 {
 	struct drm_dp_mst_branch *mstb = container_of(kref, struct drm_dp_mst_branch, kref);
 	struct drm_dp_mst_port *port, *tmp;
 	bool wake_tx = false;
+
+	/*
+	 * init kref again to be used by ports to remove mst branch when it is
+	 * not needed anymore
+	 */
+	kref_init(kref);
+
+	if (mstb->port_parent && list_empty(&mstb->port_parent->next))
+		kref_get(&mstb->port_parent->kref);
 
 	/*
 	 * destroy all ports - don't need lock
@@ -830,7 +858,8 @@ static void drm_dp_destroy_mst_branch_device(struct kref *kref)
 
 	if (wake_tx)
 		wake_up(&mstb->mgr->tx_waitq);
-	kfree(mstb);
+
+	kref_put(kref, drm_dp_free_mst_branch_device);
 }
 
 static void drm_dp_put_mst_branch_device(struct drm_dp_mst_branch *mstb)
@@ -878,6 +907,7 @@ static void drm_dp_destroy_port(struct kref *kref)
 			 * from an EDID retrieval */
 
 			mutex_lock(&mgr->destroy_connector_lock);
+			kref_get(&port->parent->kref);
 			list_add(&port->next, &mgr->destroy_connector_list);
 			mutex_unlock(&mgr->destroy_connector_lock);
 			schedule_work(&mgr->destroy_connector_work);
@@ -886,6 +916,7 @@ static void drm_dp_destroy_port(struct kref *kref)
 		/* no need to clean up vcpi
 		 * as if we have no connector we never setup a vcpi */
 		drm_dp_port_teardown_pdt(port, port->pdt);
+		port->pdt = DP_PEER_DEVICE_NONE;
 	}
 	kfree(port);
 }
@@ -1013,18 +1044,27 @@ static bool drm_dp_port_setup_pdt(struct drm_dp_mst_port *port)
 	return send_link;
 }
 
-static void drm_dp_check_port_guid(struct drm_dp_mst_branch *mstb,
-				   struct drm_dp_mst_port *port)
+static void drm_dp_check_mstb_guid(struct drm_dp_mst_branch *mstb, u8 *guid)
 {
 	int ret;
-	if (port->dpcd_rev >= 0x12) {
-		port->guid_valid = drm_dp_validate_guid(mstb->mgr, port->guid);
-		if (!port->guid_valid) {
-			ret = drm_dp_send_dpcd_write(mstb->mgr,
-						     port,
-						     DP_GUID,
-						     16, port->guid);
-			port->guid_valid = true;
+
+	memcpy(mstb->guid, guid, 16);
+
+	if (!drm_dp_validate_guid(mstb->mgr, mstb->guid)) {
+		if (mstb->port_parent) {
+			ret = drm_dp_send_dpcd_write(
+					mstb->mgr,
+					mstb->port_parent,
+					DP_GUID,
+					16,
+					mstb->guid);
+		} else {
+
+			ret = drm_dp_dpcd_write(
+					mstb->mgr->aux,
+					DP_GUID,
+					mstb->guid,
+					16);
 		}
 	}
 }
@@ -1081,7 +1121,6 @@ static void drm_dp_add_port(struct drm_dp_mst_branch *mstb,
 	port->dpcd_rev = port_msg->dpcd_revision;
 	port->num_sdp_streams = port_msg->num_sdp_streams;
 	port->num_sdp_stream_sinks = port_msg->num_sdp_stream_sinks;
-	memcpy(port->guid, port_msg->peer_guid, 16);
 
 	/* manage mstb port lists with mgr lock - take a reference
 	   for this list */
@@ -1094,11 +1133,9 @@ static void drm_dp_add_port(struct drm_dp_mst_branch *mstb,
 
 	if (old_ddps != port->ddps) {
 		if (port->ddps) {
-			drm_dp_check_port_guid(mstb, port);
 			if (!port->input)
 				drm_dp_send_enum_path_resources(mstb->mgr, mstb, port);
 		} else {
-			port->guid_valid = false;
 			port->available_pbn = 0;
 			}
 	}
@@ -1126,7 +1163,9 @@ static void drm_dp_add_port(struct drm_dp_mst_branch *mstb,
 			drm_dp_put_port(port);
 			goto out;
 		}
-		if (port->port_num >= 8) {
+		if ((port->pdt == DP_PEER_DEVICE_DP_LEGACY_CONV ||
+		     port->pdt == DP_PEER_DEVICE_SST_SINK) &&
+		    port->port_num >= DP_MST_LOGICAL_PORT_0) {
 			port->cached_edid = drm_get_edid(port->connector, &port->aux.ddc);
 		}
 	}
@@ -1156,10 +1195,8 @@ static void drm_dp_update_port(struct drm_dp_mst_branch *mstb,
 
 	if (old_ddps != port->ddps) {
 		if (port->ddps) {
-			drm_dp_check_port_guid(mstb, port);
 			dowork = true;
 		} else {
-			port->guid_valid = false;
 			port->available_pbn = 0;
 		}
 	}
@@ -1216,12 +1253,13 @@ static struct drm_dp_mst_branch *get_mst_branch_device_by_guid_helper(
 	struct drm_dp_mst_branch *found_mstb;
 	struct drm_dp_mst_port *port;
 
+	if (memcmp(mstb->guid, guid, 16) == 0)
+		return mstb;
+
+
 	list_for_each_entry(port, &mstb->ports, next) {
 		if (!port->mstb)
 			continue;
-
-		if (port->guid_valid && memcmp(port->guid, guid, 16) == 0)
-			return port->mstb;
 
 		found_mstb = get_mst_branch_device_by_guid_helper(port->mstb, guid);
 
@@ -1241,10 +1279,7 @@ static struct drm_dp_mst_branch *drm_dp_get_mst_branch_device_by_guid(
 	/* find the port by iterating down */
 	mutex_lock(&mgr->lock);
 
-	if (mgr->guid_valid && memcmp(mgr->guid, guid, 16) == 0)
-		mstb = mgr->mst_primary;
-	else
-		mstb = get_mst_branch_device_by_guid_helper(mgr->mst_primary, guid);
+	mstb = get_mst_branch_device_by_guid_helper(mgr->mst_primary, guid);
 
 	if (mstb)
 		kref_get(&mstb->kref);
@@ -1549,6 +1584,9 @@ static int drm_dp_send_link_address(struct drm_dp_mst_topology_mgr *mgr,
 				       txmsg->reply.u.link_addr.ports[i].num_sdp_streams,
 				       txmsg->reply.u.link_addr.ports[i].num_sdp_stream_sinks);
 			}
+
+			drm_dp_check_mstb_guid(mstb, txmsg->reply.u.link_addr.guid);
+
 			for (i = 0; i < txmsg->reply.u.link_addr.nports; i++) {
 				drm_dp_add_port(mstb, mgr->dev, &txmsg->reply.u.link_addr.ports[i]);
 			}
@@ -1595,6 +1633,37 @@ static int drm_dp_send_enum_path_resources(struct drm_dp_mst_topology_mgr *mgr,
 	return 0;
 }
 
+static struct drm_dp_mst_port *drm_dp_get_last_connected_port_to_mstb(struct drm_dp_mst_branch *mstb)
+{
+	if (!mstb->port_parent)
+		return NULL;
+
+	if (mstb->port_parent->mstb != mstb)
+		return mstb->port_parent;
+
+	return drm_dp_get_last_connected_port_to_mstb(mstb->port_parent->parent);
+}
+
+static struct drm_dp_mst_branch *drm_dp_get_last_connected_port_and_mstb(struct drm_dp_mst_topology_mgr *mgr,
+									 struct drm_dp_mst_branch *mstb,
+									 int *port_num)
+{
+	struct drm_dp_mst_branch *rmstb = NULL;
+	struct drm_dp_mst_port *found_port;
+	mutex_lock(&mgr->lock);
+	if (mgr->mst_primary) {
+		found_port = drm_dp_get_last_connected_port_to_mstb(mstb);
+
+		if (found_port) {
+			rmstb = found_port->parent;
+			kref_get(&rmstb->kref);
+			*port_num = found_port->port_num;
+		}
+	}
+	mutex_unlock(&mgr->lock);
+	return rmstb;
+}
+
 static int drm_dp_payload_send_msg(struct drm_dp_mst_topology_mgr *mgr,
 				   struct drm_dp_mst_port *port,
 				   int id,
@@ -1602,11 +1671,22 @@ static int drm_dp_payload_send_msg(struct drm_dp_mst_topology_mgr *mgr,
 {
 	struct drm_dp_sideband_msg_tx *txmsg;
 	struct drm_dp_mst_branch *mstb;
-	int len, ret;
+	int len, ret, port_num;
 
-	mstb = drm_dp_get_validated_mstb_ref(mgr, port->parent);
-	if (!mstb)
+	port = drm_dp_get_validated_port_ref(mgr, port);
+	if (!port)
 		return -EINVAL;
+
+	port_num = port->port_num;
+	mstb = drm_dp_get_validated_mstb_ref(mgr, port->parent);
+	if (!mstb) {
+		mstb = drm_dp_get_last_connected_port_and_mstb(mgr, port->parent, &port_num);
+
+		if (!mstb) {
+			drm_dp_put_port(port);
+			return -EINVAL;
+		}
+	}
 
 	txmsg = kzalloc(sizeof(*txmsg), GFP_KERNEL);
 	if (!txmsg) {
@@ -1615,7 +1695,7 @@ static int drm_dp_payload_send_msg(struct drm_dp_mst_topology_mgr *mgr,
 	}
 
 	txmsg->dst = mstb;
-	len = build_allocate_payload(txmsg, port->port_num,
+	len = build_allocate_payload(txmsg, port_num,
 				     id,
 				     pbn);
 
@@ -1631,6 +1711,7 @@ static int drm_dp_payload_send_msg(struct drm_dp_mst_topology_mgr *mgr,
 	kfree(txmsg);
 fail_put:
 	drm_dp_put_mst_branch_device(mstb);
+	drm_dp_put_port(port);
 	return ret;
 }
 
@@ -1713,6 +1794,11 @@ int drm_dp_update_payload_part1(struct drm_dp_mst_topology_mgr *mgr)
 		req_payload.start_slot = cur_slots;
 		if (mgr->proposed_vcpis[i]) {
 			port = container_of(mgr->proposed_vcpis[i], struct drm_dp_mst_port, vcpi);
+			port = drm_dp_get_validated_port_ref(mgr, port);
+			if (!port) {
+				mutex_unlock(&mgr->payload_lock);
+				return -EINVAL;
+			}
 			req_payload.num_slots = mgr->proposed_vcpis[i]->num_slots;
 		} else {
 			port = NULL;
@@ -1731,13 +1817,16 @@ int drm_dp_update_payload_part1(struct drm_dp_mst_topology_mgr *mgr)
 				mgr->payloads[i].num_slots = req_payload.num_slots;
 			} else if (mgr->payloads[i].num_slots) {
 				mgr->payloads[i].num_slots = 0;
-				drm_dp_destroy_payload_step1(mgr, port, port->vcpi.vcpi, &mgr->payloads[i]);
+				drm_dp_destroy_payload_step1(mgr, port, mgr->payloads[i].vcpi, &mgr->payloads[i]);
 				req_payload.payload_state = mgr->payloads[i].payload_state;
 				mgr->payloads[i].start_slot = 0;
 			}
 			mgr->payloads[i].payload_state = req_payload.payload_state;
 		}
 		cur_slots += req_payload.num_slots;
+
+		if (port)
+			drm_dp_put_port(port);
 	}
 
 	for (i = 0; i < mgr->max_payloads; i++) {
@@ -1969,31 +2058,17 @@ int drm_dp_mst_topology_mgr_set_mst(struct drm_dp_mst_topology_mgr *mgr, bool ms
 		mgr->mst_primary = mstb;
 		kref_get(&mgr->mst_primary->kref);
 
+		ret = drm_dp_dpcd_writeb(mgr->aux, DP_MSTM_CTRL,
+							 DP_MST_EN | DP_UP_REQ_EN | DP_UPSTREAM_IS_SRC);
+		if (ret < 0) {
+			goto out_unlock;
+		}
+
 		{
 			struct drm_dp_payload reset_pay;
 			reset_pay.start_slot = 0;
 			reset_pay.num_slots = 0x3f;
 			drm_dp_dpcd_write_payload(mgr, 0, &reset_pay);
-		}
-
-		ret = drm_dp_dpcd_writeb(mgr->aux, DP_MSTM_CTRL,
-					 DP_MST_EN | DP_UP_REQ_EN | DP_UPSTREAM_IS_SRC);
-		if (ret < 0) {
-			goto out_unlock;
-		}
-
-
-		/* sort out guid */
-		ret = drm_dp_dpcd_read(mgr->aux, DP_GUID, mgr->guid, 16);
-		if (ret != 16) {
-			DRM_DEBUG_KMS("failed to read DP GUID %d\n", ret);
-			goto out_unlock;
-		}
-
-		mgr->guid_valid = drm_dp_validate_guid(mgr, mgr->guid);
-		if (!mgr->guid_valid) {
-			ret = drm_dp_dpcd_write(mgr->aux, DP_GUID, mgr->guid, 16);
-			mgr->guid_valid = true;
 		}
 
 		queue_work(system_long_wq, &mgr->work);
@@ -2057,6 +2132,8 @@ int drm_dp_mst_topology_mgr_resume(struct drm_dp_mst_topology_mgr *mgr)
 
 	if (mgr->mst_primary) {
 		int sret;
+		u8 guid[16];
+
 		sret = drm_dp_dpcd_read(mgr->aux, DP_DPCD_REV, mgr->dpcd, DP_RECEIVER_CAP_SIZE);
 		if (sret != DP_RECEIVER_CAP_SIZE) {
 			DRM_DEBUG_KMS("dpcd read failed - undocked during suspend?\n");
@@ -2071,6 +2148,16 @@ int drm_dp_mst_topology_mgr_resume(struct drm_dp_mst_topology_mgr *mgr)
 			ret = -1;
 			goto out_unlock;
 		}
+
+		/* Some hubs forget their guids after they resume */
+		sret = drm_dp_dpcd_read(mgr->aux, DP_GUID, guid, 16);
+		if (sret != 16) {
+			DRM_DEBUG_KMS("dpcd read failed - undocked during suspend?\n");
+			ret = -1;
+			goto out_unlock;
+		}
+		drm_dp_check_mstb_guid(mgr->mst_primary, guid);
+
 		ret = 0;
 	} else
 		ret = -1;
@@ -2081,7 +2168,7 @@ out_unlock:
 }
 EXPORT_SYMBOL(drm_dp_mst_topology_mgr_resume);
 
-static void drm_dp_get_one_sb_msg(struct drm_dp_mst_topology_mgr *mgr, bool up)
+static bool drm_dp_get_one_sb_msg(struct drm_dp_mst_topology_mgr *mgr, bool up)
 {
 	int len;
 	u8 replyblock[32];
@@ -2096,12 +2183,12 @@ static void drm_dp_get_one_sb_msg(struct drm_dp_mst_topology_mgr *mgr, bool up)
 			       replyblock, len);
 	if (ret != len) {
 		DRM_DEBUG_KMS("failed to read DPCD down rep %d %d\n", len, ret);
-		return;
+		return false;
 	}
 	ret = drm_dp_sideband_msg_build(msg, replyblock, len, true);
 	if (!ret) {
 		DRM_DEBUG_KMS("sideband msg build failed %d\n", replyblock[0]);
-		return;
+		return false;
 	}
 	replylen = msg->curchunk_len + msg->curchunk_hdrlen;
 
@@ -2113,21 +2200,32 @@ static void drm_dp_get_one_sb_msg(struct drm_dp_mst_topology_mgr *mgr, bool up)
 		ret = drm_dp_dpcd_read(mgr->aux, basereg + curreply,
 				    replyblock, len);
 		if (ret != len) {
-			DRM_DEBUG_KMS("failed to read a chunk\n");
+			DRM_DEBUG_KMS("failed to read a chunk (len %d, ret %d)\n",
+				      len, ret);
+			return false;
 		}
+
 		ret = drm_dp_sideband_msg_build(msg, replyblock, len, false);
-		if (ret == false)
+		if (!ret) {
 			DRM_DEBUG_KMS("failed to build sideband msg\n");
+			return false;
+		}
+
 		curreply += len;
 		replylen -= len;
 	}
+	return true;
 }
 
 static int drm_dp_mst_handle_down_rep(struct drm_dp_mst_topology_mgr *mgr)
 {
 	int ret = 0;
 
-	drm_dp_get_one_sb_msg(mgr, false);
+	if (!drm_dp_get_one_sb_msg(mgr, false)) {
+		memset(&mgr->down_rep_recv, 0,
+		       sizeof(struct drm_dp_sideband_msg_rx));
+		return 0;
+	}
 
 	if (mgr->down_rep_recv.have_eomt) {
 		struct drm_dp_sideband_msg_tx *txmsg;
@@ -2183,7 +2281,12 @@ static int drm_dp_mst_handle_down_rep(struct drm_dp_mst_topology_mgr *mgr)
 static int drm_dp_mst_handle_up_req(struct drm_dp_mst_topology_mgr *mgr)
 {
 	int ret = 0;
-	drm_dp_get_one_sb_msg(mgr, true);
+
+	if (!drm_dp_get_one_sb_msg(mgr, true)) {
+		memset(&mgr->up_req_recv, 0,
+		       sizeof(struct drm_dp_sideband_msg_rx));
+		return 0;
+	}
 
 	if (mgr->up_req_recv.have_eomt) {
 		struct drm_dp_sideband_msg_req_body msg;
@@ -2217,6 +2320,7 @@ static int drm_dp_mst_handle_up_req(struct drm_dp_mst_topology_mgr *mgr)
 			}
 
 			drm_dp_update_port(mstb, &msg.u.conn_stat);
+
 			DRM_DEBUG_KMS("Got CSN: pn: %d ldps:%d ddps: %d mcs: %d ip: %d pdt: %d\n", msg.u.conn_stat.port_number, msg.u.conn_stat.legacy_device_plug_status, msg.u.conn_stat.displayport_device_plug_status, msg.u.conn_stat.message_capability_status, msg.u.conn_stat.input_port, msg.u.conn_stat.peer_device_type);
 			(*mgr->cbs->hotplug)(mgr);
 
@@ -2234,7 +2338,9 @@ static int drm_dp_mst_handle_up_req(struct drm_dp_mst_topology_mgr *mgr)
 			DRM_DEBUG_KMS("Got RSN: pn: %d avail_pbn %d\n", msg.u.resource_stat.port_number, msg.u.resource_stat.available_pbn);
 		}
 
-		drm_dp_put_mst_branch_device(mstb);
+		if (mstb)
+			drm_dp_put_mst_branch_device(mstb);
+
 		memset(&mgr->up_req_recv, 0, sizeof(struct drm_dp_sideband_msg_rx));
 	}
 	return ret;
@@ -2749,6 +2855,13 @@ static void drm_dp_tx_work(struct work_struct *work)
 	mutex_unlock(&mgr->qlock);
 }
 
+static void drm_dp_free_mst_port(struct kref *kref)
+{
+	struct drm_dp_mst_port *port = container_of(kref, struct drm_dp_mst_port, kref);
+	kref_put(&port->parent->kref, drm_dp_free_mst_branch_device);
+	kfree(port);
+}
+
 static void drm_dp_destroy_connector_work(struct work_struct *work)
 {
 	struct drm_dp_mst_topology_mgr *mgr = container_of(work, struct drm_dp_mst_topology_mgr, destroy_connector_work);
@@ -2769,13 +2882,21 @@ static void drm_dp_destroy_connector_work(struct work_struct *work)
 		list_del(&port->next);
 		mutex_unlock(&mgr->destroy_connector_lock);
 
+		kref_init(&port->kref);
+		INIT_LIST_HEAD(&port->next);
+
 		mgr->cbs->destroy_connector(mgr, port->connector);
 
 		drm_dp_port_teardown_pdt(port, port->pdt);
+		port->pdt = DP_PEER_DEVICE_NONE;
 
-		if (!port->input && port->vcpi.vcpi > 0)
+		if (!port->input && port->vcpi.vcpi > 0) {
+			drm_dp_mst_reset_vcpi_slots(mgr, port);
+			drm_dp_update_payload_part1(mgr);
 			drm_dp_mst_put_payload_id(mgr, port->vcpi.vcpi);
-		kfree(port);
+		}
+
+		kref_put(&port->kref, drm_dp_free_mst_port);
 		send_hotplug = true;
 	}
 	if (send_hotplug)

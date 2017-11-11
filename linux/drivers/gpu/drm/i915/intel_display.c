@@ -3785,10 +3785,10 @@ static void page_flip_completed(struct intel_crtc *intel_crtc)
 	drm_crtc_vblank_put(&intel_crtc->base);
 
 	wake_up_all(&dev_priv->pending_flip_queue);
-	queue_work(dev_priv->wq, &work->work);
-
 	trace_i915_flip_complete(intel_crtc->plane,
 				 work->pending_flip_obj);
+
+	queue_work(dev_priv->wq, &work->work);
 }
 
 void intel_crtc_wait_for_pending_flips(struct drm_crtc *crtc)
@@ -5608,10 +5608,6 @@ static void intel_connector_check_state(struct intel_connector *connector)
 		DRM_DEBUG_KMS("[CONNECTOR:%d:%s]\n",
 			      connector->base.base.id,
 			      connector->base.name);
-
-		/* there is no real hw state for MST connectors */
-		if (connector->mst_port)
-			return;
 
 		I915_STATE_WARN(connector->base.dpms == DRM_MODE_DPMS_OFF,
 		     "wrong connector dpms state\n");
@@ -11225,13 +11221,6 @@ check_encoder_state(struct drm_device *dev)
 			if (connector->base.dpms != DRM_MODE_DPMS_OFF)
 				active = true;
 		}
-		/*
-		 * for MST connectors if we unplug the connector is gone
-		 * away but the encoder is still connected to a crtc
-		 * until a modeset happens in response to the hotplug.
-		 */
-		if (!enabled && encoder->base.encoder_type == DRM_MODE_ENCODER_DPMST)
-			continue;
 
 		I915_STATE_WARN(!!encoder->base.crtc != enabled,
 		     "encoder's enabled state mismatch "

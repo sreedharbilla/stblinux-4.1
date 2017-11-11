@@ -117,8 +117,7 @@ static int crb_recv(struct tpm_chip *chip, u8 *buf, size_t count)
 
 	memcpy_fromio(buf, priv->rsp, 6);
 	expected = be32_to_cpup((__be32 *) &buf[2]);
-
-	if (expected > count)
+	if (expected > count || expected < 6)
 		return -EIO;
 
 	memcpy_fromio(&buf[6], &priv->rsp[6], expected - 6);
@@ -309,10 +308,10 @@ static int crb_acpi_remove(struct acpi_device *device)
 	struct device *dev = &device->dev;
 	struct tpm_chip *chip = dev_get_drvdata(dev);
 
-	tpm_chip_unregister(chip);
-
 	if (chip->flags & TPM_CHIP_FLAG_TPM2)
 		tpm2_shutdown(chip, TPM2_SU_CLEAR);
+
+	tpm_chip_unregister(chip);
 
 	return 0;
 }

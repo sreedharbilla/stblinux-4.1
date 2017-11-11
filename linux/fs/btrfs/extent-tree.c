@@ -3732,6 +3732,7 @@ static int update_space_info(struct btrfs_fs_info *info, u64 flags,
 				    info->space_info_kobj, "%s",
 				    alloc_name(found->flags));
 	if (ret) {
+		percpu_counter_destroy(&found->total_bytes_pinned);
 		kfree(found);
 		return ret;
 	}
@@ -3974,6 +3975,11 @@ commit_trans:
 		if (need_commit &&
 		    !atomic_read(&root->fs_info->open_ioctl_trans)) {
 			need_commit--;
+
+			if (need_commit > 0) {
+				btrfs_start_delalloc_roots(fs_info, 0, -1);
+				btrfs_wait_ordered_roots(fs_info, -1);
+			}
 
 			trans = btrfs_join_transaction(root);
 			if (IS_ERR(trans))
@@ -7499,7 +7505,7 @@ btrfs_init_new_buffer(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		set_extent_dirty(&trans->transaction->dirty_pages, buf->start,
 			 buf->start + buf->len - 1, GFP_NOFS);
 	}
-	trans->blocks_used++;
+	trans->dirty = true;
 	/* this returns a buffer locked for blocking */
 	return buf;
 }

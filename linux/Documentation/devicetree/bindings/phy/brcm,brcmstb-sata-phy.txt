@@ -18,6 +18,14 @@ Sub-nodes required properties:
 - phy-cells: generic PHY binding; must be 0
 Optional:
 - brcm,enable-ssc: use spread spectrum clocking (SSC) on this port
+- brcm,rxaeq-mode: string that indicates the desired RX equalizer
+  mode, possible values are:
+	"off" (equivalent to not specifying the property)
+	"auto"
+	"manual" (brcm,rxaeq-value is used in that case)
+
+- brcm,rxaeq-value: when 'rxaeq-mode' is set to "manual", provides the RX
+  equalizer value that should be used. Allowed range is 0..63.
 
 
 Example:

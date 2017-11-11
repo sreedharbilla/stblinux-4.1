@@ -661,7 +661,7 @@ config SPI_BCM_QSPI
 
 config SPI_BRCMSTB_MSPI
 	tristate "Broadcom MSPI master support for STB chips"
-	depends on (SPI_BCM_QSPI && BCM7120_L2_IRQ) || COMPILE_TEST
+	depends on SPI_BCM_QSPI || COMPILE_TEST
 	default n
 	help
 	  Enables support for the Broadcom MSPI controller.  Currently only

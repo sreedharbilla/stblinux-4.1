@@ -109,6 +109,9 @@
 
 #define MIDR_BRAHMA_B53 MIDR_CPU_PART(ARM_CPU_IMP_BCM, BCM_CPU_PART_BRAHMA_B53)
 
+/* Qualcomm implemented cores */
+#define ARM_CPU_PART_SCORPION		0x510002d0
+
 #ifndef __ASSEMBLY__
 
 #include <linux/stringify.h>

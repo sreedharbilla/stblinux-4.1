@@ -76,12 +76,14 @@ enum ovl_path_type ovl_path_type(struct dentry *dentry)
 	if (oe->__upperdentry) {
 		type = __OVL_PATH_UPPER;
 
-		if (oe->numlower) {
-			if (S_ISDIR(dentry->d_inode->i_mode))
-				type |= __OVL_PATH_MERGE;
-		} else if (!oe->opaque) {
+		/*
+		 * Non-dir dentry can hold lower dentry from previous
+		 * location. Its purity depends only on opaque flag.
+		 */
+		if (oe->numlower && S_ISDIR(dentry->d_inode->i_mode))
+			type |= __OVL_PATH_MERGE;
+		else if (!oe->opaque)
 			type |= __OVL_PATH_PURE;
-		}
 	} else {
 		if (oe->numlower > 1)
 			type |= __OVL_PATH_MERGE;
@@ -656,6 +658,10 @@ retry:
 		struct kstat stat = {
 			.mode = S_IFDIR | 0,
 		};
+		struct iattr attr = {
+			.ia_valid = ATTR_MODE,
+			.ia_mode = stat.mode,
+		};
 
 		if (work->d_inode) {
 			err = -EEXIST;
@@ -669,6 +675,21 @@ retry:
 		}
 
 		err = ovl_create_real(dir, work, &stat, NULL, NULL, true);
+		if (err)
+			goto out_dput;
+
+		err = vfs_removexattr(work, XATTR_NAME_POSIX_ACL_DEFAULT);
+		if (err && err != -ENODATA && err != -EOPNOTSUPP)
+			goto out_dput;
+
+		err = vfs_removexattr(work, XATTR_NAME_POSIX_ACL_ACCESS);
+		if (err && err != -ENODATA && err != -EOPNOTSUPP)
+			goto out_dput;
+
+		/* Clear any inherited mode bits */
+		mutex_lock(&work->d_inode->i_mutex);
+		err = notify_change(work, &attr, NULL);
+		mutex_unlock(&work->d_inode->i_mutex);
 		if (err)
 			goto out_dput;
 	}

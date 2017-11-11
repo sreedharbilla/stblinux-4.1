@@ -54,7 +54,7 @@ static void pty_close(struct tty_struct *tty, struct file *filp)
 	if (!tty->link)
 		return;
 	set_bit(TTY_OTHER_CLOSED, &tty->link->flags);
-	tty_flip_buffer_push(tty->link->port);
+	wake_up_interruptible(&tty->link->read_wait);
 	wake_up_interruptible(&tty->link->write_wait);
 	if (tty->driver->subtype == PTY_TYPE_MASTER) {
 		set_bit(TTY_OTHER_CLOSED, &tty->flags);
@@ -211,16 +211,11 @@ static int pty_signal(struct tty_struct *tty, int sig)
 static void pty_flush_buffer(struct tty_struct *tty)
 {
 	struct tty_struct *to = tty->link;
-	struct tty_ldisc *ld;
 
 	if (!to)
 		return;
 
-	ld = tty_ldisc_ref(to);
-	tty_buffer_flush(to, ld);
-	if (ld)
-		tty_ldisc_deref(ld);
-
+	tty_buffer_flush(to, NULL);
 	if (to->packet) {
 		spin_lock_irq(&tty->ctrl_lock);
 		tty->ctrl_status |= TIOCPKT_FLUSHWRITE;
@@ -242,9 +237,7 @@ static int pty_open(struct tty_struct *tty, struct file *filp)
 		goto out;
 
 	clear_bit(TTY_IO_ERROR, &tty->flags);
-	/* TTY_OTHER_CLOSED must be cleared before TTY_OTHER_DONE */
 	clear_bit(TTY_OTHER_CLOSED, &tty->link->flags);
-	clear_bit(TTY_OTHER_DONE, &tty->link->flags);
 	set_bit(TTY_THROTTLED, &tty->flags);
 	return 0;
 
