@@ -607,8 +607,8 @@ static int brcmnand_revision_init(struct brcmnand_controller *ctrl)
 	else
 		ctrl->max_oob = 16;
 
-	/* v6.0 and newer (except v6.1) have prefetch support */
-	if (ctrl->nand_version >= 0x0600 && ctrl->nand_version != 0x0601)
+	/* v6.2 and newer have a working prefetch support */
+	if (ctrl->nand_version >= 0x0602)
 		ctrl->features |= BRCMNAND_HAS_PREFETCH;
 
 	/*
@@ -2311,16 +2311,9 @@ static int brcmnand_setup_dev(struct brcmnand_host *host)
 	if (ctrl->nand_version >= 0x0702)
 		tmp |= ACC_CONTROL_RD_ERASED;
 	tmp &= ~ACC_CONTROL_FAST_PGM_RDIN;
-	if (ctrl->features & BRCMNAND_HAS_PREFETCH) {
-		/*
-		 * FIXME: Flash DMA + prefetch may see spurious erased-page ECC
-		 * errors
-		 */
-		if (has_flash_dma(ctrl))
-			tmp &= ~ACC_CONTROL_PREFETCH;
-		else
-			tmp |= ACC_CONTROL_PREFETCH;
-	}
+	if (ctrl->features & BRCMNAND_HAS_PREFETCH)
+		tmp &= ~ACC_CONTROL_PREFETCH;
+
 	nand_writereg(ctrl, offs, tmp);
 
 	return 0;

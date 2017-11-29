@@ -116,6 +116,7 @@ static inline void bcm_sf2_arl_from_entry(u64 *mac_vid, u32 *fwd_entry,
 struct bcm_sf2_cfp_priv {
 	struct mutex	lock;
 	DECLARE_BITMAP(used, CFP_NUM_RULES);
+	DECLARE_BITMAP(unique, CFP_NUM_RULES);
 	unsigned int	rules_cnt;
 };
 
