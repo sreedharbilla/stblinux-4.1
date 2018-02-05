@@ -173,6 +173,8 @@ compatible string.
 
 Required properties:
 - compatible     : should contain one or more of these
+	"brcm,brcmstb-memc-ddr-rev-b.3.0"
+	"brcm,brcmstb-memc-ddr-rev-b.2.2"
 	"brcm,brcmstb-memc-ddr-rev-b.2.1"
 	"brcm,brcmstb-memc-ddr-rev-b.2.0"
 	"brcm,brcmstb-memc-ddr-rev-b.1.3"

@@ -97,6 +97,9 @@ enum sata_mdio_phy_regs {
 	AEQ_FRC_EQ_FORCE			= BIT(0),
 	AEQ_FRC_EQ_FORCE_VAL			= BIT(1),
 	AEQRX_REG_BANK_1			= 0xe0,
+
+	RXPMD_REG_BANK				= 0x1c0,
+	RXPMD_RX_FREQ_MON_CONTROL1		= 0x87,
 };
 
 static inline void __iomem *brcm_sata_phy_base(struct brcm_sata_port *port)
@@ -189,6 +192,32 @@ static int brcm_stb_sata_rxaeq_init(struct brcm_sata_port *port)
 	return 0;
 }
 
+static void brcm_stb_sata_calibrate(struct brcm_sata_port *port)
+{
+	void __iomem *base = brcm_sata_phy_base(port);
+	u32 tmp = BIT(8);
+
+	brcm_sata_mdio_wr(base, RXPMD_REG_BANK, RXPMD_RX_FREQ_MON_CONTROL1,
+			  ~tmp, tmp);
+}
+
+static int brcm_sata_phy_calibrate(struct phy *phy)
+{
+	struct brcm_sata_port *port = phy_get_drvdata(phy);
+	int rc = -EOPNOTSUPP;
+
+	switch (port->phy_priv->version) {
+	case BRCM_SATA_PHY_28NM:
+	case BRCM_SATA_PHY_40NM:
+		brcm_stb_sata_calibrate(port);
+		rc = 0;
+		break;
+	default:
+		break;
+	};
+
+	return rc;
+}
 
 static int brcm_sata_phy_init(struct phy *phy)
 {
@@ -201,6 +230,7 @@ static int brcm_sata_phy_init(struct phy *phy)
 
 static struct phy_ops phy_ops = {
 	.init		= brcm_sata_phy_init,
+	.calibrate	= brcm_sata_phy_calibrate,
 	.owner		= THIS_MODULE,
 };
 

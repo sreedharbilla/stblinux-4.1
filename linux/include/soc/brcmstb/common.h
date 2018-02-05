@@ -10,9 +10,11 @@
 #ifndef __SOC_BRCMSTB_COMMON_H__
 #define __SOC_BRCMSTB_COMMON_H__
 
+#include "aon_defs.h"
+
 bool soc_is_brcmstb(void);
 int dtu_save(void);
-int brcmstb_dtusave_init(u32 *map_buffer, u32 *config_buffer);
+int brcmstb_dtusave_init(struct brcmstb_bootloader_dtu_table *tbl);
 int brcmstb_regsave_init(void);
 
 #endif /* __SOC_BRCMSTB_COMMON_H__ */

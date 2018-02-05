@@ -61,7 +61,7 @@
 #include <asm/idle.h>
 
 static unsigned int target_mwait;
-#elif CONFIG_ARM
+#elif defined(CONFIG_ARM) || defined(CONFIG_ARM64)
 #include <asm/proc-fns.h>
 #endif
 
@@ -344,7 +344,7 @@ static void inline powerclamp_get_cstate_inform(u64 *msr_now, u64 *tsc_now)
 	*msr_now = pkg_state_counter();
 	rdtscll(*tsc_now);
 }
-#elif CONFIG_ARM
+#elif defined(CONFIG_ARM) || defined(CONFIG_ARM64)
 static void inline powerclamp_get_cstate_inform(u64 *idle, u64 *wall)
 {
 	u64 _wall;
@@ -412,7 +412,7 @@ static void powerclamp_enter_idle(void)
 	start_critical_timings();
 	atomic_inc(&idle_wakeup_counter);
 }
-#elif CONFIG_ARM
+#elif defined(CONFIG_ARM) || defined(CONFIG_ARM64)
 static void  powerclamp_enter_idle(void)
 {
 	stop_critical_timings();

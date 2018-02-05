@@ -605,6 +605,9 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	}
 
 cmd_rel_host:
+	/* Always switch back to main area after RPMB access */
+	if (is_rpmb)
+		mmc_blk_part_switch(card, dev_get_drvdata(&card->dev));
 	mmc_put_card(card);
 
 cmd_done:

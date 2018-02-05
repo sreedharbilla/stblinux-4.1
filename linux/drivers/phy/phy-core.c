@@ -342,6 +342,21 @@ int phy_power_off(struct phy *phy)
 }
 EXPORT_SYMBOL_GPL(phy_power_off);
 
+int phy_calibrate(struct phy *phy)
+{
+	int ret;
+
+	if (!phy || !phy->ops->calibrate)
+		return 0;
+
+	mutex_lock(&phy->mutex);
+	ret = phy->ops->calibrate(phy);
+	mutex_unlock(&phy->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(phy_calibrate);
+
 /**
  * _of_phy_get() - lookup and obtain a reference to a phy by phandle
  * @np: device_node for which to get the phy

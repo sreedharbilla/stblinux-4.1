@@ -70,6 +70,10 @@
 	(DATA_ENDIAN << DMADESC_ENDIAN_SHIFT) |		\
 	(MMIO_ENDIAN << MMIO_ENDIAN_SHIFT))
 
+#define BUS_CTRL_ENDIAN_CONF_MASK			\
+	(0x3 << MMIO_ENDIAN_SHIFT | 0x3 << DMADESC_ENDIAN_SHIFT |	\
+	 0x3 << DMADATA_ENDIAN_SHIFT | 0x3 << PIODATA_ENDIAN_SHIFT)
+
 enum brcm_ahci_quirks {
 	BRCM_AHCI_QUIRK_NONCQ		= BIT(0),
 	BRCM_AHCI_QUIRK_SKIP_PHY_ENABLE	= BIT(1),
@@ -81,15 +85,6 @@ struct brcm_ahci_priv {
 	u32 port_mask;
 	struct clk *clk;
 	u32 quirks;
-};
-
-static const struct ata_port_info ahci_brcm_port_info = {
-	.flags		= AHCI_FLAG_COMMON | ATA_FLAG_NO_DIPM,
-	.flags2		= ATA_FLAG2_WAKE_BEFORE_STOP,
-	.link_flags	= ATA_LFLAG_NO_DB_DELAY,
-	.pio_mask	= ATA_PIO4,
-	.udma_mask	= ATA_UDMA6,
-	.port_ops	= &ahci_platform_ops,
 };
 
 static inline u32 brcm_sata_readreg(void __iomem *addr)
@@ -266,10 +261,109 @@ static void brcm_sata_clk_disable(struct brcm_ahci_priv *priv)
 
 static void brcm_sata_init(struct brcm_ahci_priv *priv)
 {
+	u32 reg;
+
 	/* Configure endianness */
-	brcm_sata_writereg(BUS_CTRL_ENDIAN_CONF,
-			   priv->top_ctrl + SATA_TOP_CTRL_BUS_CTRL);
+	reg = brcm_sata_readreg(priv->top_ctrl + SATA_TOP_CTRL_BUS_CTRL);
+	reg &= ~BUS_CTRL_ENDIAN_CONF_MASK;
+	reg |= BUS_CTRL_ENDIAN_CONF;
+	brcm_sata_writereg(reg, priv->top_ctrl + SATA_TOP_CTRL_BUS_CTRL);
 }
+
+static unsigned int brcm_ahci_read_id(struct ata_device *dev,
+				      struct ata_taskfile *tf, u16 *id)
+{
+	struct ata_port *ap = dev->link->ap;
+	struct ata_host *host = ap->host;
+	struct ahci_host_priv *hpriv = host->private_data;
+	struct brcm_ahci_priv *priv = hpriv->plat_data;
+	void __iomem *mmio = hpriv->mmio;
+	unsigned int err_mask;
+	unsigned long flags;
+	int i, rc;
+	u32 ctl;
+
+	/* Try to read the device ID and, if this fails, proceed with the
+	 * recovery sequence below
+	 */
+	err_mask = ata_do_dev_read_id(dev, tf, id);
+	if (likely(!err_mask))
+		return err_mask;
+
+	/* Disable host interrupts */
+	spin_lock_irqsave(&host->lock, flags);
+	ctl = readl(mmio + HOST_CTL);
+	ctl &= ~HOST_IRQ_EN;
+	writel(ctl, mmio + HOST_CTL);
+	readl(mmio + HOST_CTL); /* flush */
+	spin_unlock_irqrestore(&host->lock, flags);
+
+	/* Perform the SATA PHY reset sequence */
+	brcm_sata_phy_disable(priv, ap->port_no);
+
+	/* Reset the SATA clock */
+	brcm_sata_clk_disable(priv);
+	msleep(10);
+
+	brcm_sata_clk_enable(priv);
+	msleep(10);
+
+	/* Bring the PHY back on */
+	brcm_sata_phy_enable(priv, ap->port_no);
+
+	/* Re-initialize and calibrate the PHY */
+	for (i = 0; i < hpriv->nports; i++) {
+		rc = phy_init(hpriv->phys[i]);
+		if (rc)
+			goto disable_phys;
+
+		rc = phy_calibrate(hpriv->phys[i]);
+		if (rc) {
+			phy_exit(hpriv->phys[i]);
+			goto disable_phys;
+		}
+	}
+
+	/* Re-enable host interrupts */
+	spin_lock_irqsave(&host->lock, flags);
+	ctl = readl(mmio + HOST_CTL);
+	ctl |= HOST_IRQ_EN;
+	writel(ctl, mmio + HOST_CTL);
+	readl(mmio + HOST_CTL); /* flush */
+	spin_unlock_irqrestore(&host->lock, flags);
+
+	return ata_do_dev_read_id(dev, tf, id);
+
+disable_phys:
+	while (--i >= 0) {
+		phy_power_off(hpriv->phys[i]);
+		phy_exit(hpriv->phys[i]);
+	}
+
+	return AC_ERR_OTHER;
+}
+
+static void brcm_ahci_host_stop(struct ata_host *host)
+{
+	struct ahci_host_priv *hpriv = host->private_data;
+
+	ahci_platform_disable_resources(hpriv);
+}
+
+static struct ata_port_operations ahci_brcm_platform_ops = {
+	.inherits	= &ahci_ops,
+	.host_stop	= brcm_ahci_host_stop,
+	.read_id	= brcm_ahci_read_id,
+};
+
+static const struct ata_port_info ahci_brcm_port_info = {
+	.flags		= AHCI_FLAG_COMMON | ATA_FLAG_NO_DIPM,
+	.flags2		= ATA_FLAG2_WAKE_BEFORE_STOP,
+	.link_flags	= ATA_LFLAG_NO_DB_DELAY,
+	.pio_mask	= ATA_PIO4,
+	.udma_mask	= ATA_UDMA6,
+	.port_ops	= &ahci_brcm_platform_ops,
+};
 
 #ifdef CONFIG_PM_SLEEP
 static int brcm_ahci_suspend(struct device *dev)

@@ -1893,7 +1893,7 @@ try_dmaread:
 		if (ctrl->nand_version < 0x0702) {
 			err = brcmstb_nand_verify_erased_page(mtd, chip, buf, addr);
 
-			if (err > 0) {
+			if (err >= 0) {
 				if (buf)
 					memset(buf, 0xff, FC_BYTES * trans);
 				if (oob)
