@@ -269,8 +269,17 @@ static void put_compound_page(struct page *page)
 		put_refcounted_compound_page(page_head, page);
 }
 
+#ifdef CONFIG_PAGE_AUTOMAP
+void put_automap_page(struct page *page);
+#endif
 void put_page(struct page *page)
 {
+#ifdef CONFIG_PAGE_AUTOMAP
+	if (unlikely(PageAutoMap(page))) {
+		put_automap_page(page);
+		return;
+	}
+#endif
 	if (unlikely(PageCompound(page)))
 		put_compound_page(page);
 	else if (put_page_testzero(page))

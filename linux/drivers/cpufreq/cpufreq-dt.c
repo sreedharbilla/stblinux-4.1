@@ -209,7 +209,8 @@ static int cpufreq_init(struct cpufreq_policy *policy)
 	}
 
 	/* OPPs might be populated at runtime, don't check for error here */
-	of_init_opp_table(cpu_dev);
+	ret = dev_pm_opp_of_get_sharing_cpus(cpu_dev, policy->cpus);
+	dev_pm_opp_of_cpumask_add_table(policy->cpus);
 
 	/*
 	 * But we need OPP table to function so if it is not there let's
@@ -222,6 +223,7 @@ static int cpufreq_init(struct cpufreq_policy *policy)
 		goto out_free_opp;
 	}
 
+		ret = dev_pm_opp_set_sharing_cpus(cpu_dev, policy->cpus);
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv) {
 		ret = -ENOMEM;
@@ -307,7 +309,7 @@ out_free_cpufreq_table:
 out_free_priv:
 	kfree(priv);
 out_free_opp:
-	of_free_opp_table(cpu_dev);
+	dev_pm_opp_of_cpumask_remove_table(policy->cpus);
 	of_node_put(np);
 out_put_reg_clk:
 	clk_put(cpu_clk);
@@ -323,7 +325,7 @@ static int cpufreq_exit(struct cpufreq_policy *policy)
 
 	cpufreq_cooling_unregister(priv->cdev);
 	dev_pm_opp_free_cpufreq_table(priv->cpu_dev, &policy->freq_table);
-	of_free_opp_table(priv->cpu_dev);
+	dev_pm_opp_of_cpumask_remove_table(policy->related_cpus);
 	clk_put(policy->clk);
 	if (!IS_ERR(priv->cpu_reg))
 		regulator_put(priv->cpu_reg);

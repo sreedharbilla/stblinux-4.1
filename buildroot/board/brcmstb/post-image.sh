@@ -45,9 +45,23 @@ rm -f "${rootfs_tar}.gz"
 mv "$rootfs_tar" "$nfs_tar"
 bzip2 -f "$nfs_tar"
 
-linux_image=`ls "$image_path"/*Image 2>/dev/null`
+if [ "$arch" = "bmips" ]; then
+	linux_image="$image_path/vmlinux"
+else
+	linux_image=`ls "$image_path"/*Image 2>/dev/null`
+fi
 
 echo "Creating initrd image..."
-mv "$linux_image" "$image_path/vmlinuz-initrd-$arch"
+if [ "$arch" = "arm64" -o "$arch" = "bmips" ]; then
+	gzip -9 "$linux_image"
+	mv "$linux_image.gz" "$image_path/vmlinuz-initrd-$arch"
+else
+	mv "$linux_image" "$image_path/vmlinuz-initrd-$arch"
+fi
 echo "Creating plain kernel image..."
-mv "$linux_image.norootfs" "$image_path/vmlinuz-$arch"
+if [ "$arch" = "arm64" -o "$arch" = "bmips" ]; then
+	gzip -9 "$linux_image.norootfs"
+	mv "$linux_image.norootfs.gz" "$image_path/vmlinuz-$arch"
+else
+	mv "$linux_image.norootfs" "$image_path/vmlinuz-$arch"
+fi

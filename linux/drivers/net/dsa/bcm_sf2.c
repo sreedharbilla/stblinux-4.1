@@ -101,8 +101,8 @@ static void bcm_sf2_sw_get_strings(struct dsa_switch *ds,
 	unsigned int i;
 
 	for (i = 0; i < BCM_SF2_STATS_SIZE; i++)
-		memcpy(data + i * ETH_GSTRING_LEN,
-		       bcm_sf2_mib[i].string, ETH_GSTRING_LEN);
+		strlcpy(data + i * ETH_GSTRING_LEN,
+			bcm_sf2_mib[i].string, ETH_GSTRING_LEN);
 }
 
 static void bcm_sf2_sw_get_ethtool_stats(struct dsa_switch *ds,

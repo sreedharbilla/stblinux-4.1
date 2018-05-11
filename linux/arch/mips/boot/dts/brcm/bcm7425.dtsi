@@ -245,6 +245,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "brcm,spi-brcmstb",
+				"brcm,spi-bcm7425-qspi",
 				"brcm,spi-bcm-qspi";
 			status = "disabled";
 			reg = <0x41c200 0x188 0x41c000 0x50

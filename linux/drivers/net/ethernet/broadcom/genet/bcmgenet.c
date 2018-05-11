@@ -1,7 +1,7 @@
 /*
  * Broadcom GENET (Gigabit Ethernet) controller driver
  *
- * Copyright (c) 2014-2016 Broadcom
+ * Copyright (c) 2014-2017 Broadcom
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -1361,9 +1361,10 @@ static void bcmgenet_update_mib_counters(struct bcmgenet_priv *priv)
 				if (val == ~0)
 					bcmgenet_umac_writel(priv, 0,
 							     s->reg_offset);
-			} else
+			} else {
 				val = bcmgenet_update_stat_misc(priv,
 								s->reg_offset);
+			}
 			break;
 		}
 

@@ -96,11 +96,17 @@ static int xhci_brcm_probe(struct platform_device *pdev)
 		goto dealloc_usb2_hcd;
 	}
 
+	if (device_property_read_bool(&pdev->dev, "usb3-lpm-capable"))
+		xhci->quirks |= XHCI_LPM_SUPPORT;
+
 	/*
 	 * Set the xHCI pointer before xhci_brcm_setup() (aka hcd_driver.reset)
 	 * is called by usb_add_hcd().
 	 */
 	*((struct xhci_hcd **) xhci->shared_hcd->hcd_priv) = xhci;
+
+	if (HCC_MAX_PSA(xhci->hcc_params) >= 4)
+		xhci->shared_hcd->can_do_streams = 1;
 
 	ret = usb_add_hcd(xhci->shared_hcd, hcd->irq, IRQF_SHARED);
 	if (ret)

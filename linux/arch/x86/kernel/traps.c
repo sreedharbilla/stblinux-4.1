@@ -136,7 +136,7 @@ enum ctx_state ist_enter(struct pt_regs *regs)
 	preempt_count_add(HARDIRQ_OFFSET);
 
 	/* This code is a bit fragile.  Test it. */
-	rcu_lockdep_assert(rcu_is_watching(), "ist_enter didn't work");
+	RCU_LOCKDEP_WARN(!rcu_is_watching(), "ist_enter didn't work");
 
 	return prev_state;
 }
@@ -175,7 +175,7 @@ void ist_begin_non_atomic(struct pt_regs *regs)
 	 * from double_fault.
 	 */
 	BUG_ON((unsigned long)(current_top_of_stack() -
-			       current_stack_pointer()) >= THREAD_SIZE);
+			       current_stack_pointer) >= THREAD_SIZE);
 
 	preempt_count_sub(HARDIRQ_OFFSET);
 }
