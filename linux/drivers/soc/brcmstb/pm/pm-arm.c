@@ -7,7 +7,7 @@
  * S5: (a.k.a. S3 cold boot) much like S3, except DDR is powered down, so we
  *     treat this mode like a soft power-off, with wakeup allowed from AON
  *
- * Copyright © 2014-2017 Broadcom
+ * Copyright © 2014-2018 Broadcom
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -49,6 +49,7 @@
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
 #include <linux/platform_device.h>
+#include <linux/irqchip/arm-gic.h>
 #include <asm/fncpy.h>
 #include <asm/suspend.h>
 #include <asm/setup.h>
@@ -528,6 +529,15 @@ static void brcmstb_do_pmsm_power_down(unsigned long base_cmd, bool onewrite)
 {
 	void __iomem *base = ctrl.aon_ctrl_base;
 
+	/*
+	 * If the CPU is committed to power down, make sure
+	 * the PMSM will be in charge of waking it up upon IRQ,
+	 * i.e. IRQ lines are cut from GIC CPU IF to the CPU by
+	 * disabling the GIC CPU IF to prevent wfi from completing
+	 * execution behind the PMSM's back
+	 */
+	gic_cpu_if_down();
+
 	if ((ctrl.s3entry_method == 1) && (base_cmd == PM_COLD_CONFIG))
 		s5entry_method1();
 
@@ -541,6 +551,10 @@ static void brcmstb_do_pmsm_power_down(unsigned long base_cmd, bool onewrite)
 		(void)__raw_readl(base + AON_CTRL_PM_CTRL);
 	}
 	wfi();
+
+	/* Execution can only be resumed through the reset vector */
+	while (1)
+		;
 }
 
 /* Support S5 cold boot out of "poweroff" */

@@ -706,7 +706,7 @@ static void __init arch_mem_init(char **cmdline_p)
 	dma_contiguous_reserve(PFN_PHYS(max_low_pfn));
 	/* Tell bootmem about reserved memory blocks in memblock */
 	for_each_memblock(reserved, reg) {
-		if (reg->size != 0)
+		if (reg->size == 0)
 			continue;
 		/*
 		 * Bootmem does not have knowledge of high mem, however memblock
