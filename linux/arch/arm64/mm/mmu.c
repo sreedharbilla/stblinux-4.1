@@ -89,7 +89,8 @@ static void split_pmd(pmd_t *pmd, pte_t *pte)
 static void alloc_init_pte(pmd_t *pmd, unsigned long addr,
 				  unsigned long end, unsigned long pfn,
 				  pgprot_t prot,
-				  void *(*alloc)(unsigned long size))
+				  void *(*alloc)(unsigned long size),
+				  bool automap)
 {
 	pte_t *pte;
 
@@ -104,7 +105,8 @@ static void alloc_init_pte(pmd_t *pmd, unsigned long addr,
 
 	pte = pte_offset_kernel(pmd, addr);
 	do {
-		set_pte(pte, pfn_pte(pfn, prot));
+		if (!automap)
+			set_pte(pte, pfn_pte(pfn, prot));
 		pfn++;
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 }
@@ -124,7 +126,8 @@ void split_pud(pud_t *old_pud, pmd_t *pmd)
 static void alloc_init_pmd(struct mm_struct *mm, pud_t *pud,
 				  unsigned long addr, unsigned long end,
 				  phys_addr_t phys, pgprot_t prot,
-				  void *(*alloc)(unsigned long size))
+				  void *(*alloc)(unsigned long size),
+				  bool automap)
 {
 	pmd_t *pmd;
 	unsigned long next;
@@ -150,7 +153,7 @@ static void alloc_init_pmd(struct mm_struct *mm, pud_t *pud,
 	do {
 		next = pmd_addr_end(addr, end);
 		/* try section mapping first */
-		if (((addr | next | phys) & ~SECTION_MASK) == 0) {
+		if (((addr | next | phys) & ~SECTION_MASK) == 0 && !automap) {
 			pmd_t old_pmd =*pmd;
 			set_pmd(pmd, __pmd(phys |
 					   pgprot_val(mk_sect_prot(prot))));
@@ -168,7 +171,7 @@ static void alloc_init_pmd(struct mm_struct *mm, pud_t *pud,
 			}
 		} else {
 			alloc_init_pte(pmd, addr, next, __phys_to_pfn(phys),
-				       prot, alloc);
+				       prot, alloc, automap);
 		}
 		phys += next - addr;
 	} while (pmd++, addr = next, addr != end);
@@ -189,7 +192,8 @@ static inline bool use_1G_block(unsigned long addr, unsigned long next,
 static void alloc_init_pud(struct mm_struct *mm, pgd_t *pgd,
 				  unsigned long addr, unsigned long end,
 				  phys_addr_t phys, pgprot_t prot,
-				  void *(*alloc)(unsigned long size))
+				  void *(*alloc)(unsigned long size),
+				  bool automap)
 {
 	pud_t *pud;
 	unsigned long next;
@@ -207,7 +211,7 @@ static void alloc_init_pud(struct mm_struct *mm, pgd_t *pgd,
 		/*
 		 * For 4K granule only, attempt to put down a 1GB block
 		 */
-		if (use_1G_block(addr, next, phys)) {
+		if (use_1G_block(addr, next, phys) && !automap) {
 			pud_t old_pud = *pud;
 			set_pud(pud, __pud(phys |
 					   pgprot_val(mk_sect_prot(prot))));
@@ -228,7 +232,8 @@ static void alloc_init_pud(struct mm_struct *mm, pgd_t *pgd,
 				}
 			}
 		} else {
-			alloc_init_pmd(mm, pud, addr, next, phys, prot, alloc);
+			alloc_init_pmd(mm, pud, addr, next, phys, prot, alloc,
+				       automap);
 		}
 		phys += next - addr;
 	} while (pud++, addr = next, addr != end);
@@ -241,7 +246,8 @@ static void alloc_init_pud(struct mm_struct *mm, pgd_t *pgd,
 static void  __create_mapping(struct mm_struct *mm, pgd_t *pgd,
 				    phys_addr_t phys, unsigned long virt,
 				    phys_addr_t size, pgprot_t prot,
-				    void *(*alloc)(unsigned long size))
+				    void *(*alloc)(unsigned long size),
+				    bool automap)
 {
 	unsigned long addr, length, end, next;
 
@@ -251,7 +257,8 @@ static void  __create_mapping(struct mm_struct *mm, pgd_t *pgd,
 	end = addr + length;
 	do {
 		next = pgd_addr_end(addr, end);
-		alloc_init_pud(mm, pgd, addr, next, phys, prot, alloc);
+		alloc_init_pud(mm, pgd, addr, next, phys, prot, alloc,
+			       automap);
 		phys += next - addr;
 	} while (pgd++, addr = next, addr != end);
 }
@@ -267,7 +274,8 @@ static void *late_alloc(unsigned long size)
 }
 
 static void __ref create_mapping(phys_addr_t phys, unsigned long virt,
-				  phys_addr_t size, pgprot_t prot)
+				  phys_addr_t size, pgprot_t prot,
+				  bool automap)
 {
 	if (virt < VMALLOC_START) {
 		pr_warn("BUG: not creating mapping for %pa at 0x%016lx - outside kernel range\n",
@@ -275,7 +283,7 @@ static void __ref create_mapping(phys_addr_t phys, unsigned long virt,
 		return;
 	}
 	__create_mapping(&init_mm, pgd_offset_k(virt & PAGE_MASK), phys, virt,
-			 size, prot, early_alloc);
+			 size, prot, early_alloc, automap);
 }
 
 void __init create_pgd_mapping(struct mm_struct *mm, phys_addr_t phys,
@@ -283,7 +291,7 @@ void __init create_pgd_mapping(struct mm_struct *mm, phys_addr_t phys,
 			       pgprot_t prot)
 {
 	__create_mapping(mm, pgd_offset(mm, virt), phys, virt, size, prot,
-				late_alloc);
+				late_alloc, false);
 }
 
 static void create_mapping_late(phys_addr_t phys, unsigned long virt,
@@ -296,11 +304,12 @@ static void create_mapping_late(phys_addr_t phys, unsigned long virt,
 	}
 
 	return __create_mapping(&init_mm, pgd_offset_k(virt & PAGE_MASK),
-				phys, virt, size, prot, late_alloc);
+				phys, virt, size, prot, late_alloc, false);
 }
 
 #ifdef CONFIG_DEBUG_RODATA
-static void __init __map_memblock(phys_addr_t start, phys_addr_t end)
+static void __init __map_memblock(phys_addr_t start, phys_addr_t end,
+				  bool automap)
 {
 	/*
 	 * Set up the executable regions using the existing section mappings
@@ -312,32 +321,33 @@ static void __init __map_memblock(phys_addr_t start, phys_addr_t end)
 
 	if (end < kernel_x_start) {
 		create_mapping(start, __phys_to_virt(start),
-			end - start, PAGE_KERNEL);
+			end - start, PAGE_KERNEL, automap);
 	} else if (start >= kernel_x_end) {
 		create_mapping(start, __phys_to_virt(start),
-			end - start, PAGE_KERNEL);
+			end - start, PAGE_KERNEL, automap);
 	} else {
 		if (start < kernel_x_start)
 			create_mapping(start, __phys_to_virt(start),
 				kernel_x_start - start,
-				PAGE_KERNEL);
+				PAGE_KERNEL, automap);
 		create_mapping(kernel_x_start,
 				__phys_to_virt(kernel_x_start),
 				kernel_x_end - kernel_x_start,
-				PAGE_KERNEL_EXEC);
+				PAGE_KERNEL_EXEC, automap);
 		if (kernel_x_end < end)
 			create_mapping(kernel_x_end,
 				__phys_to_virt(kernel_x_end),
 				end - kernel_x_end,
-				PAGE_KERNEL);
+				PAGE_KERNEL, automap);
 	}
 
 }
 #else
-static void __init __map_memblock(phys_addr_t start, phys_addr_t end)
+static void __init __map_memblock(phys_addr_t start, phys_addr_t end,
+				  bool automap)
 {
 	create_mapping(start, __phys_to_virt(start), end - start,
-			PAGE_KERNEL_EXEC);
+			PAGE_KERNEL_EXEC, automap);
 }
 #endif
 
@@ -369,7 +379,7 @@ static void __init map_mem(void)
 
 		if (start >= end)
 			break;
-		if (memblock_is_nomap(reg) || memblock_is_automap(reg))
+		if (memblock_is_nomap(reg))
 			continue;
 
 #ifndef CONFIG_ARM64_64K_PAGES
@@ -387,7 +397,7 @@ static void __init map_mem(void)
 			memblock_set_current_limit(limit);
 		}
 #endif
-		__map_memblock(start, end);
+		__map_memblock(start, end, memblock_is_automap(reg));
 	}
 
 	/* Limit no longer required. */
@@ -404,7 +414,7 @@ void __init fixup_executable(void)
 
 		create_mapping(aligned_start, __phys_to_virt(aligned_start),
 				__pa(_stext) - aligned_start,
-				PAGE_KERNEL);
+				PAGE_KERNEL, false);
 	}
 
 	if (!IS_ALIGNED((unsigned long)__init_end, SECTION_SIZE)) {
@@ -412,7 +422,7 @@ void __init fixup_executable(void)
 							SECTION_SIZE);
 		create_mapping(__pa(__init_end), (unsigned long)__init_end,
 				aligned_end - __pa(__init_end),
-				PAGE_KERNEL);
+				PAGE_KERNEL, false);
 	}
 #endif
 }

@@ -853,11 +853,14 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 		master->busy = true;
 	spin_unlock_irqrestore(&master->queue_lock, flags);
 
+	mutex_lock(&master->io_mutex);
+
 	if (!was_busy && master->auto_runtime_pm) {
 		ret = pm_runtime_get_sync(master->dev.parent);
 		if (ret < 0) {
 			dev_err(&master->dev, "Failed to power device: %d\n",
 				ret);
+			mutex_unlock(&master->io_mutex);
 			return;
 		}
 	}
@@ -873,11 +876,11 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 
 			if (master->auto_runtime_pm)
 				pm_runtime_put(master->dev.parent);
+			mutex_unlock(&master->io_mutex);
 			return;
 		}
 	}
 
-	mutex_lock(&master->bus_lock_mutex);
 	trace_spi_message_start(master->cur_msg);
 
 	if (master->prepare_message) {
@@ -887,8 +890,7 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 				"failed to prepare message: %d\n", ret);
 			master->cur_msg->status = ret;
 			spi_finalize_current_message(master);
-			mutex_unlock(&master->bus_lock_mutex);
-			return;
+			goto out;
 		}
 		master->cur_msg_prepared = true;
 	}
@@ -897,18 +899,22 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 	if (ret) {
 		master->cur_msg->status = ret;
 		spi_finalize_current_message(master);
-		mutex_unlock(&master->bus_lock_mutex);
-		return;
+		goto out;
 	}
 
 	ret = master->transfer_one_message(master, master->cur_msg);
 	if (ret) {
 		dev_err(&master->dev,
 			"failed to transfer one message from queue\n");
-		mutex_unlock(&master->bus_lock_mutex);
-		return;
+		goto out;
 	}
-	mutex_unlock(&master->bus_lock_mutex);
+
+out:
+	mutex_unlock(&master->io_mutex);
+
+	/* Prod the scheduler in case transfer_one() was busy waiting */
+	if (!ret)
+		cond_resched();
 }
 
 /**
@@ -1555,6 +1561,7 @@ int spi_register_master(struct spi_master *master)
 	spin_lock_init(&master->queue_lock);
 	spin_lock_init(&master->bus_lock_spinlock);
 	mutex_init(&master->bus_lock_mutex);
+	mutex_init(&master->io_mutex);
 	master->bus_lock_flag = 0;
 	init_completion(&master->xfer_completion);
 	if (!master->max_dma_len)
@@ -2073,7 +2080,9 @@ int spi_flash_read(struct spi_device *spi,
 		}
 	}
 	mutex_lock(&master->bus_lock_mutex);
+	mutex_lock(&master->io_mutex);
 	ret = master->spi_flash_read(spi, msg);
+	mutex_unlock(&master->io_mutex);
 	mutex_unlock(&master->bus_lock_mutex);
 	if (master->auto_runtime_pm)
 		pm_runtime_put(master->dev.parent);
@@ -2094,8 +2103,7 @@ static void spi_complete(void *arg)
 	complete(arg);
 }
 
-static int __spi_sync(struct spi_device *spi, struct spi_message *message,
-		      int bus_locked)
+static int __spi_sync(struct spi_device *spi, struct spi_message *message)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
 	int status;
@@ -2109,9 +2117,6 @@ static int __spi_sync(struct spi_device *spi, struct spi_message *message,
 	message->complete = spi_complete;
 	message->context = &done;
 	message->spi = spi;
-
-	if (!bus_locked)
-		mutex_lock(&master->bus_lock_mutex);
 
 	/* If we're not using the legacy transfer method then we will
 	 * try to transfer in the calling context so special case.
@@ -2129,9 +2134,6 @@ static int __spi_sync(struct spi_device *spi, struct spi_message *message,
 	} else {
 		status = spi_async_locked(spi, message);
 	}
-
-	if (!bus_locked)
-		mutex_unlock(&master->bus_lock_mutex);
 
 	if (status == 0) {
 		/* Push out the messages in the calling context if we
@@ -2170,7 +2172,13 @@ static int __spi_sync(struct spi_device *spi, struct spi_message *message,
  */
 int spi_sync(struct spi_device *spi, struct spi_message *message)
 {
-	return __spi_sync(spi, message, 0);
+	int ret;
+
+	mutex_lock(&spi->master->bus_lock_mutex);
+	ret = __spi_sync(spi, message);
+	mutex_unlock(&spi->master->bus_lock_mutex);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(spi_sync);
 
@@ -2192,7 +2200,7 @@ EXPORT_SYMBOL_GPL(spi_sync);
  */
 int spi_sync_locked(struct spi_device *spi, struct spi_message *message)
 {
-	return __spi_sync(spi, message, 1);
+	return __spi_sync(spi, message);
 }
 EXPORT_SYMBOL_GPL(spi_sync_locked);
 

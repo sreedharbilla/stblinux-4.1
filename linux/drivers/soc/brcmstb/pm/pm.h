@@ -16,6 +16,25 @@
 #ifndef __BRCMSTB_PM_H__
 #define __BRCMSTB_PM_H__
 
+#ifndef __ASSEMBLY__
+#include <linux/kernel.h>
+
+#ifndef CONFIG_MIPS
+struct brcmstb_memc {
+	void __iomem *ddr_phy_base;
+	void __iomem *ddr_shimphy_base;
+	void __iomem *ddr_ctrl;
+};
+#else
+struct brcmstb_memc {
+	void __iomem *ddr_phy_base;
+	void __iomem *arb_base;
+};
+#endif /* !CONFIG_MIPS */
+
+
+#endif
+
 #define AON_CTRL_RESET_CTRL		0x00
 #define AON_CTRL_PM_CTRL		0x04
 #define AON_CTRL_PM_STATUS		0x08
@@ -23,6 +42,10 @@
 #define AON_CTRL_PM_INITIATE		0x88
 #define AON_CTRL_HOST_MISC_CMDS		0x8c
 #define AON_CTRL_SYSTEM_DATA_RAM_OFS	0x200
+
+/* Valid for MEMC controllers rev B2.1 and newer */
+#define DDR_CTRL_SRPD_CONFIG		0x20
+#define FORCE_SRPD_EXIT			(1 << 17)
 
 /* MIPS PM constants */
 /* MEMC0 offsets */

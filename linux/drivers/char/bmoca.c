@@ -177,6 +177,7 @@ struct moca_priv_data {
 	spinlock_t		irq_status_lock;
 	struct mutex		dev_mutex;
 	struct mutex		moca_i2c_mutex;
+	struct mutex		irq_status_mutex;
 	int			host_mbx_busy;
 	int			host_resp_pending;
 	int			core_req_pending;
@@ -647,6 +648,31 @@ static void moca_ringbell(struct moca_priv_data *priv, u32 mask)
 	MOCA_RD(priv->base + r->ringbell_offset);
 }
 
+static unsigned long moca_irqstatus_lock(struct moca_priv_data *priv)
+{
+	unsigned long flags = 0;
+
+	/* Use a spin_lock if this chip has direct register access
+	 * (non-blocking) to MoCA.  Otherwise this code won't be
+	 * run from the ISR, so mutex it.
+	 */
+	if (priv->moca_ops->dma)
+		spin_lock_irqsave(&priv->irq_status_lock, flags);
+	else
+		mutex_lock(&priv->irq_status_mutex);
+
+	return flags;
+}
+
+static void moca_irqstatus_unlock(struct moca_priv_data *priv,
+				  unsigned int flags)
+{
+	if (priv->moca_ops->dma)
+		spin_unlock_irqrestore(&priv->irq_status_lock, flags);
+	else
+		mutex_unlock(&priv->irq_status_mutex);
+}
+
 static u32 moca_irq_status(struct moca_priv_data *priv, int flush)
 {
 	const struct moca_regs *r = priv->regs;
@@ -656,7 +682,7 @@ static u32 moca_irq_status(struct moca_priv_data *priv, int flush)
 	if (moca_is_20(priv))
 		dma_mask |= M2H_NEXTCHUNK_CPU0;
 
-	spin_lock_irqsave(&priv->irq_status_lock, flags);
+	flags = moca_irqstatus_lock(priv);
 
 	stat = MOCA_RD(priv->base + priv->regs->l2_status_offset);
 
@@ -681,7 +707,7 @@ static u32 moca_irq_status(struct moca_priv_data *priv, int flush)
 		MOCA_RD(priv->base + r->l2_clear_offset);
 	}
 
-	spin_unlock_irqrestore(&priv->irq_status_lock, flags);
+	moca_irqstatus_unlock(priv, flags);
 
 	return stat;
 }
@@ -2365,6 +2391,9 @@ static const struct file_operations moca_fops = {
 	.open =			moca_file_open,
 	.release =		moca_file_release,
 	.unlocked_ioctl =	moca_file_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl =		moca_file_ioctl,
+#endif
 	.read =			moca_file_read,
 	.write =		moca_file_write,
 	.poll =			moca_file_poll,
@@ -2825,6 +2854,7 @@ int moca_initialize(struct device *dev, struct moca_ops *moca_ops,
 
 	mutex_init(&priv->dev_mutex);
 	mutex_init(&priv->moca_i2c_mutex);
+	mutex_init(&priv->irq_status_mutex);
 
 	sg_init_table(priv->fw_sg, MAX_FW_PAGES);
 

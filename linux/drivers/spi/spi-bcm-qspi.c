@@ -663,19 +663,14 @@ static int update_qspi_trans_byte_count(struct bcm_qspi *qspi,
 		if (qt->trans->cs_change &&
 		    (flags & TRANS_STATUS_BREAK_CS_CHANGE))
 			ret |= TRANS_STATUS_BREAK_CS_CHANGE;
-		if (ret)
-			goto done;
-
-		dev_dbg(&qspi->pdev->dev, "advance msg exit\n");
 		if (spi_transfer_is_last(qspi->master, qt->trans))
-			ret = TRANS_STATUS_BREAK_EOM;
+			ret |= TRANS_STATUS_BREAK_EOM;
 		else
-			ret = TRANS_STATUS_BREAK_NO_BYTES;
+			ret |= TRANS_STATUS_BREAK_NO_BYTES;
 
 		qt->trans = NULL;
 	}
 
-done:
 	dev_dbg(&qspi->pdev->dev, "trans %p len %d byte %d ret %x\n",
 		qt->trans, qt->trans ? qt->trans->len : 0, qt->byte, ret);
 	return ret;
@@ -822,7 +817,16 @@ static int write_to_hw(struct bcm_qspi *qspi, struct spi_device *spi)
 	bcm_qspi_write(qspi, MSPI, MSPI_NEWQP, 0);
 	bcm_qspi_write(qspi, MSPI, MSPI_ENDQP, slot - 1);
 
-	if (tstatus & TRANS_STATUS_BREAK_DESELECT) {
+	/*
+	 *  case 1) EOM =1, cs_change =0: SSb inactive
+	 *  case 2) EOM =1, cs_change =1: SSb stay active
+	 *  case 3) EOM =0, cs_change =0: SSb stay active
+	 *  case 4) EOM =0, cs_change =1: SSb inactive
+	 */
+	if (((tstatus & TRANS_STATUS_BREAK_DESELECT)
+	     == TRANS_STATUS_BREAK_CS_CHANGE) ||
+	    ((tstatus & TRANS_STATUS_BREAK_DESELECT)
+	     == TRANS_STATUS_BREAK_EOM)) {
 		mspi_cdram = read_cdram_slot(qspi, slot - 1) &
 			~MSPI_CDRAM_CONT_BIT;
 		write_cdram_slot(qspi, slot - 1, mspi_cdram);

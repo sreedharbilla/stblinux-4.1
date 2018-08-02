@@ -14,7 +14,6 @@ config MIPS
 	select HAVE_ARCH_SECCOMP_FILTER
 	select HAVE_ARCH_TRACEHOOK
 	select HAVE_BPF_JIT if !CPU_MICROMIPS
-	select ARCH_HAVE_CUSTOM_GPIO_H
 	select HAVE_FUNCTION_TRACER
 	select HAVE_DYNAMIC_FTRACE
 	select HAVE_FTRACE_MCOUNT_RECORD
@@ -76,6 +75,7 @@ config MIPS_ALCHEMY
 	select SYS_HAS_CPU_MIPS32_R1
 	select SYS_SUPPORTS_32BIT_KERNEL
 	select SYS_SUPPORTS_APM_EMULATION
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select SYS_SUPPORTS_ZBOOT
 	select COMMON_CLK
@@ -95,6 +95,7 @@ config AR7
 	select SYS_SUPPORTS_LITTLE_ENDIAN
 	select SYS_SUPPORTS_MIPS16
 	select SYS_SUPPORTS_ZBOOT_UART16550
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select VLYNQ
 	select HAVE_CLK
@@ -104,6 +105,7 @@ config AR7
 
 config ATH25
 	bool "Atheros AR231x/AR531x SoC support"
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select CEVT_R4K
 	select CSRC_R4K
 	select DMA_NONCOHERENT
@@ -118,6 +120,7 @@ config ATH25
 
 config ATH79
 	bool "Atheros AR71XX/AR724X/AR913X based boards"
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select BOOT_RAW
 	select CEVT_R4K
@@ -180,6 +183,7 @@ config BMIPS_GENERIC
 
 config BCM47XX
 	bool "Broadcom BCM47XX based boards"
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select BOOT_RAW
 	select CEVT_R4K
@@ -211,6 +215,7 @@ config BCM63XX
 	select SYS_SUPPORTS_BIG_ENDIAN
 	select SYS_HAS_EARLY_PRINTK
 	select SWAP_IO_SPACE
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select HAVE_CLK
 	select MIPS_L1_CACHE_SHIFT_4
@@ -306,6 +311,7 @@ config MACH_JZ4740
 	select SYS_SUPPORTS_ZBOOT_UART16550
 	select DMA_NONCOHERENT
 	select IRQ_CPU
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select SYS_HAS_EARLY_PRINTK
 	select HAVE_CLK
@@ -324,6 +330,7 @@ config LANTIQ
 	select SYS_SUPPORTS_MIPS16
 	select SYS_SUPPORTS_MULTITHREADING
 	select SYS_HAS_EARLY_PRINTK
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select SWAP_IO_SPACE
 	select BOOT_RAW
@@ -354,6 +361,7 @@ config LASAT
 
 config MACH_LOONGSON
 	bool "Loongson family of machines"
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select SYS_SUPPORTS_ZBOOT
 	help
 	  This enables the support of Loongson family of machines.
@@ -375,6 +383,7 @@ config MACH_LOONGSON1
 
 config MACH_PISTACHIO
 	bool "IMG Pistachio SoC based boards"
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select BOOT_ELF32
 	select BOOT_RAW
@@ -815,6 +824,7 @@ config MIKROTIK_RB532
 	select SYS_SUPPORTS_LITTLE_ENDIAN
 	select SWAP_IO_SPACE
 	select BOOT_RAW
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select MIPS_L1_CACHE_SHIFT_4
 	help
@@ -837,6 +847,7 @@ config CAVIUM_OCTEON_SOC
 	select HW_HAS_PCI
 	select ZONE_DMA32
 	select HOLES_IN_ZONE
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select ARCH_REQUIRE_GPIOLIB
 	select LIBFDT
 	select USE_OF
@@ -1190,6 +1201,7 @@ config SOC_EMMA2RH
 
 config SOC_PNX833X
 	bool
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select CEVT_R4K
 	select CSRC_R4K
 	select IRQ_CPU
@@ -1610,6 +1622,7 @@ config CPU_BMIPS
 config CPU_XLR
 	bool "Netlogic XLR SoC"
 	depends on SYS_HAS_CPU_XLR
+	select ARCH_HAVE_CUSTOM_GPIO_H
 	select CPU_SUPPORTS_32BIT_KERNEL
 	select CPU_SUPPORTS_64BIT_KERNEL
 	select CPU_SUPPORTS_HIGHMEM

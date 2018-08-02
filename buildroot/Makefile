@@ -1129,6 +1129,8 @@ print-version:
 include docs/manual/manual.mk
 -include $(foreach dir,$(BR2_EXTERNAL_DIRS),$(sort $(wildcard $(dir)/docs/*/*.mk)))
 
+-include misc/Makefile.brcmstb
+
 .PHONY: $(noconfig_targets)
 
 endif #umask / $(CURDIR) / $(O)

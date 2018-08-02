@@ -89,12 +89,6 @@
 /* Max per bank, to keep some fairness */
 #define MAX_HASH_SIZE_BANK		SZ_64M
 
-struct brcmstb_memc {
-	void __iomem *ddr_phy_base;
-	void __iomem *ddr_shimphy_base;
-	void __iomem *ddr_ctrl;
-};
-
 struct brcmstb_pm_control {
 	void __iomem *aon_ctrl_base;
 	void __iomem *aon_sram;
@@ -114,6 +108,7 @@ struct brcmstb_pm_control {
 	u32 phy_a_standby_ctrl_offs;
 	u32 phy_b_standby_ctrl_offs;
 	bool needs_ddr_pad;
+	bool needs_srpd_exit;
 	struct platform_device *pdev;
 };
 
@@ -141,11 +136,15 @@ static struct brcmstb_memory bm;
 
 extern const unsigned long brcmstb_pm_do_s2_sz;
 extern asmlinkage int brcmstb_pm_do_s2(void __iomem *aon_ctrl_base,
-		void __iomem *ddr_phy_pll_status);
+				       unsigned int ddr_phy_pll_offset,
+				       unsigned int num_memcs,
+				       struct brcmstb_memc *memcs);
 
 static int __clear_region(struct dma_region arr[], int max);
 static int (*brcmstb_pm_do_s2_sram)(void __iomem *aon_ctrl_base,
-		void __iomem *ddr_phy_pll_status);
+				    unsigned int ddr_phy_pll_offset,
+				    unsigned int num_memcs,
+				    struct brcmstb_memc *memcs);
 
 #define BRCMSTB_PM_DEBUG_NAME	"brcmstb-pm"
 
@@ -614,8 +613,9 @@ static int brcmstb_pm_s2(void)
 		return -EINVAL;
 
 	return brcmstb_pm_do_s2_sram(ctrl.aon_ctrl_base,
-			ctrl.memcs[0].ddr_phy_base +
-			ctrl.pll_status_offset);
+				     ctrl.pll_status_offset,
+				     ctrl.needs_srpd_exit ? ctrl.num_memc : 0,
+				     ctrl.memcs);
 }
 
 static int brcmstb_pm_s3_control_hash(struct brcmstb_s3_params *params,
@@ -1260,11 +1260,24 @@ static const struct of_device_id ddr_phy_dt_ids[] = {
 
 struct ddr_seq_ofdata {
 	bool needs_ddr_pad;
+	bool needs_srpd_exit;
 	u32 warm_boot_offset;
 };
 
 static const struct ddr_seq_ofdata ddr_seq_b22 = {
 	.needs_ddr_pad = false,
+	.needs_srpd_exit = false,
+	.warm_boot_offset = 0x2c,
+};
+
+static const struct ddr_seq_ofdata ddr_seq_b21 = {
+	.needs_ddr_pad = true,
+	.needs_srpd_exit = false,
+};
+
+static const struct ddr_seq_ofdata ddr_seq_b31 = {
+	.needs_ddr_pad = false,
+	.needs_srpd_exit = true,
 	.warm_boot_offset = 0x2c,
 };
 
@@ -1280,7 +1293,7 @@ static const struct of_device_id ddr_shimphy_dt_ids[] = {
 static const struct of_device_id brcmstb_memc_of_match[] = {
 	{
 		.compatible = "brcm,brcmstb-memc-ddr-rev-b.2.1",
-		.data = &ddr_seq,
+		.data = &ddr_seq_b21,
 	},
 	{
 		.compatible = "brcm,brcmstb-memc-ddr-rev-b.2.2",
@@ -1296,7 +1309,7 @@ static const struct of_device_id brcmstb_memc_of_match[] = {
 	},
 	{
 		.compatible = "brcm,brcmstb-memc-ddr-rev-b.3.1",
-		.data = &ddr_seq_b22,
+		.data = &ddr_seq_b31,
 	},
 	{
 		.compatible = "brcm,brcmstb-memc-ddr",
@@ -1426,6 +1439,7 @@ static int brcmstb_pm_probe(struct platform_device *pdev)
 
 		ddr_seq_data = of_id->data;
 		ctrl.needs_ddr_pad = ddr_seq_data->needs_ddr_pad;
+		ctrl.needs_srpd_exit = ddr_seq_data->needs_srpd_exit;
 		/* Adjust warm boot offset based on the DDR sequencer */
 		if (ddr_seq_data->warm_boot_offset)
 			ctrl.warm_boot_offset = ddr_seq_data->warm_boot_offset;

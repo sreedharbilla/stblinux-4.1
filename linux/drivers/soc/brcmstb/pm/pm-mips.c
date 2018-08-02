@@ -51,11 +51,6 @@
 #define BOOT_VEC	9
 #define EBASE		10
 
-struct brcmstb_memc {
-	void __iomem *ddr_phy_base;
-	void __iomem *arb_base;
-};
-
 struct brcmstb_pm_control {
 	void __iomem *aon_ctrl_base;
 	void __iomem *aon_sram_base;

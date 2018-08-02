@@ -870,7 +870,7 @@ static void r4k_flush_kernel_vmap_range(unsigned long vaddr, int size)
 	r4k_on_each_cpu(local_r4k_flush_kernel_vmap_range, &args);
 }
 
-#if CONFIG_BRCMSTB
+#ifdef CONFIG_BRCMSTB
 /*
  * Fine-grained cacheflush() syscall for usermode Nexus
  */
@@ -1818,7 +1818,7 @@ void r4k_cache_init(void)
 		current_cpu_data.options |= MIPS_CPU_INCLUSIVE_CACHES;
 		break;
 	}
-#if CONFIG_BRCMSTB
+#ifdef CONFIG_BRCMSTB
 	brcmstb_cacheflush = __brcmstb_cacheflush;
 #endif
 }

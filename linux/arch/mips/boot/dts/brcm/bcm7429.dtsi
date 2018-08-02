@@ -502,7 +502,7 @@
 			interrupt-names = "upg_gio_aon",
 				"upg_gio_aon_wakeup";
 			wakeup-source;
-			brcm,gpio-bank-widths = <21 6>;
+			brcm,gpio-bank-widths = <21 0 6>;
 		};
 
 		sata: sata@181000 {

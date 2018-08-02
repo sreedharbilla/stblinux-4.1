@@ -302,8 +302,8 @@ static void __iomem *brcm_pci_map_cfg(struct pci_bus *bus, unsigned int devfn,
 
 static struct pci_ops brcm_pci_ops = {
 	.map_bus = brcm_pci_map_cfg,
-	.read = pci_generic_config_read32,
-	.write = pci_generic_config_write32,
+	.read = pci_generic_config_read,
+	.write = pci_generic_config_write,
 };
 
 struct brcm_dev_pwr_supply {
@@ -345,7 +345,7 @@ struct brcm_pcie {
 	enum pcie_type		type;
 	struct pci_bus		*bus;
 	int			id;
-	resource_size_t		reg_start; /* needed for 7278a0 quirk */
+	bool			ep_wakeup_capable;
 };
 
 struct of_pci_range *dma_ranges;
@@ -610,26 +610,10 @@ static int is_pcie_link_up(struct brcm_pcie *pcie, bool silent)
 static inline void brcm_pcie_bridge_sw_init_set(struct brcm_pcie *pcie,
 						unsigned int val)
 {
-	unsigned int offset;
 	unsigned int shift = pcie->reg_field_info[RGR1_SW_INIT_1_INIT_SHIFT];
 	u32 mask =  pcie->reg_field_info[RGR1_SW_INIT_1_INIT_MASK];
 
-	if (pcie->type != BCM7278) {
-		wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), mask, shift, val);
-	} else if (of_machine_is_compatible("brcm,bcm7278a0")) {
-		/* The two PCIE instance on 7278a0 are not even consistent with
-		 * respect to each other for internal offsets, here we offset
-		 * by 0x14000 + RGR1_SW_INIT_1's relative offset to account for
-		 * that.
-		 */
-		const resource_size_t pcie0_reg_addr = 0x8b10000UL;
-
-		offset = (pcie->reg_start == pcie0_reg_addr)
-			? pcie->reg_offsets[RGR1_SW_INIT_1] : 0x14010;
-		wr_fld_rb(pcie->base + offset, mask, shift, val);
-	} else {
-		wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), mask, shift, val);
-	}
+	wr_fld_rb(PCIE_RGR1_SW_INIT_1(pcie), mask, shift, val);
 }
 
 static inline void brcm_pcie_perst_set(struct brcm_pcie *pcie,
@@ -774,9 +758,45 @@ done:
 	return ret;
 }
 
+static int pci_dev_may_wakeup(struct pci_dev *dev, void *data)
+{
+	bool *ret = data;
+
+	if (device_may_wakeup(&dev->dev)) {
+		*ret = true;
+		dev_info(&dev->dev, "disable cancelled for wake-up device\n");
+	}
+	return (int) *ret;
+}
+
 static void set_regulators(struct brcm_pcie *pcie, bool on)
 {
 	struct list_head *pos;
+	struct pci_bus *bus = pcie->bus;
+
+	if (on) {
+		if (pcie->ep_wakeup_capable) {
+			/*
+			 * We are resuming from a suspend.  In the suspend we
+			 * did not disable the power supplies, so there is
+			 * no need to enable them (and falsely increase their
+			 * usage count).
+			 */
+			pcie->ep_wakeup_capable = false;
+			return;
+		}
+	} else {
+		/*
+		 * If at least one device on this bus is enabled as a wake-up
+		 * source, do not turn off regulators
+		 */
+		pcie->ep_wakeup_capable = false;
+		if (pcie->bridge_setup_done) {
+			pci_walk_bus(bus, pci_dev_may_wakeup, &pcie->ep_wakeup_capable);
+			if (pcie->ep_wakeup_capable)
+				return;
+		}
+	}
 
 	list_for_each(pos, &pcie->pwr_supplies) {
 		struct brcm_dev_pwr_supply *supply
@@ -1132,25 +1152,16 @@ static void __iomem *brcm_pci_map_cfg(struct pci_bus *bus, unsigned int devfn,
 				      int where)
 {
 	struct brcm_pcie *pcie = bus->sysdata;
-	void __iomem *base = pcie->base;
-	bool rc_access = pci_is_root_bus(bus);
 	int idx;
 
-	if (!is_pcie_link_up(pcie, true))
-		return NULL;
+	/* Accesses to the RC go right to the RC registers */
+	if (pci_is_root_bus(bus))
+		return PCI_SLOT(devfn) ? NULL : pcie->base + where;
 
-	base = pcie->base;
+	/* For devices, write to the config space index register */
 	idx = cfg_index(bus->number, devfn, where);
-
 	bcm_writel(idx, IDX_ADDR(pcie));
-
-	if (rc_access) {
-		if (PCI_SLOT(devfn))
-			return NULL;
-		return base + (where & ~3);
-	}
-
-	return DATA_ADDR(pcie);
+	return DATA_ADDR(pcie) + (where & 0x3);
 }
 
 /* THIS FUNCTION NOT UPSTREAMED */
@@ -1279,11 +1290,16 @@ MODULE_DEVICE_TABLE(of, brcm_pci_match);
 
 static void _brcm_pcie_remove(struct brcm_pcie *pcie)
 {
+	struct resource_entry *window;
+
 	brcm_msi_remove(pcie->msi);
 	turn_off(pcie);
 	clk_disable_unprepare(pcie->clk);
 	clk_put(pcie->clk);
 	set_regulators(pcie, false);
+	resource_list_for_each_entry(window, &pcie->resources)
+		kfree(window->res);
+	pci_free_resource_list(&pcie->resources);
 	brcm_pcie_remove_controller(pcie);
 }
 
@@ -1347,7 +1363,6 @@ static int brcm_pcie_probe(struct platform_device *pdev)
 	if (!res)
 		return -EINVAL;
 
-	pcie->reg_start = res->start;
 	base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(base))
 		return PTR_ERR(base);

@@ -51,7 +51,7 @@ EXPORT_SYMBOL_GPL(local_flush_data_cache_page);
 EXPORT_SYMBOL(flush_data_cache_page);
 EXPORT_SYMBOL(flush_icache_all);
 
-#if CONFIG_BRCMSTB
+#ifdef CONFIG_BRCMSTB
 /* BRCMSTB specific cache operations */
 int (*brcmstb_cacheflush)(unsigned long addr, unsigned long bytes,
 	unsigned int cache);
@@ -80,7 +80,7 @@ SYSCALL_DEFINE3(cacheflush, unsigned long, addr, unsigned long, bytes,
 		return 0;
 	if (!access_ok(VERIFY_WRITE, (void __user *) addr, bytes))
 		return -EFAULT;
-#if CONFIG_BRCMSTB
+#ifdef CONFIG_BRCMSTB
 	return brcmstb_cacheflush(addr, bytes, cache);
 #else
 	flush_icache_range(addr, addr + bytes);
