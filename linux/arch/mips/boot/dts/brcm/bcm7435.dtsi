@@ -51,6 +51,11 @@
 		sdhci0 = &sdhci0;
 		sdhci1 = &sdhci1;
 		brcm_pmx_core = &brcm_pmx_core;
+		moca = &moca;
+		usbphy_0 = &usbphy_0;
+		usbphy_1 = &usbphy_1;
+		pcie = &pcie;
+		sata = &sata;
 	};
 
 	cpu_intc: cpu_intc {

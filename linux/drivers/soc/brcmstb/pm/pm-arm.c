@@ -936,7 +936,14 @@ static int __clear_region(struct dma_region arr[], int max)
 static int __sorted_insert(struct dma_region arr[], int *cur, int max,
 			   phys_addr_t addr, size_t len, bool persistent)
 {
+	unsigned int i;
 	int end = *cur;
+
+	for (i = 0; i < end; i++) {
+		if (arr[i].addr == addr && arr[i].len == len &&
+		    arr[i].persistent == persistent)
+			return 0;
+	}
 
 	if (end >= max)
 		return -ENOSPC;

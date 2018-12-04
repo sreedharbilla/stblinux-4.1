@@ -532,6 +532,97 @@ static void __init sdhci_disables(void *dtb)
 			fdt_nop_node(dtb, node);
 }
 
+static void otp_disable_peripheral(void *dtb, const char * const *aliases)
+{
+	const char * const *alias = aliases;
+	int node;
+
+	while (*alias) {
+		node = alias_to_node(dtb, *alias);
+		if (node < 0)
+			continue;
+
+		pr_info(" OTP disabled: %s\n", *alias);
+		fdt_nop_node(dtb, node);
+		alias++;
+	};
+}
+
+enum otp_option_bits {
+	OTP_OPTION_SATA = 0,
+	OTP_OPTION_USB,
+	OTP_OPTION_MOCA,
+	OTP_OPTION_PCIE,
+	/* keep last */
+	OTP_OPTION_MAX,
+};
+
+struct otp_fixup {
+	u32 mask;
+	const char *aliases[2];
+};
+
+static const struct otp_fixup otp_fixups_7425_35[] __initconst = {
+	[OTP_OPTION_SATA] = {
+		.mask		= 0x00080000,
+		.aliases	= { "sata", NULL },
+	},
+	[OTP_OPTION_MOCA] = {
+		.mask		= 0x00400000,
+		.aliases	= { "moca", NULL },
+	},
+	[OTP_OPTION_PCIE] = {
+		.mask		= 0x00200000,
+		.aliases	= { "pcie", NULL },
+	},
+};
+
+static const struct otp_fixup otp_fixups_7429[] __initconst = {
+	[OTP_OPTION_SATA] = {
+		.mask		= 0x00040000,
+		.aliases	= { "sata", NULL, },
+	},
+	[OTP_OPTION_MOCA] = {
+		.mask		= 0x00200000,
+		.aliases	= { "moca", NULL, },
+	},
+};
+
+#define SUN_TOP_CTRL			0x10404000
+#define SUN_TOP_CTRL_FAMILY_ID		0x00
+#define SUN_TOP_CTRL_OPTION_STATUS_0	0x30
+
+static void __init otp_disable(void *dtb)
+{
+	const struct otp_fixup *otp_fixup;
+	unsigned int i;
+	u32 val;
+
+	val = __raw_readl(((void __iomem *)
+			  CKSEG1ADDR(SUN_TOP_CTRL + SUN_TOP_CTRL_FAMILY_ID)));
+
+	switch (val >> 16) {
+	case 0x7425:
+	case 0x7435:
+		otp_fixup = otp_fixups_7425_35;
+		break;
+	case 0x7429:
+		otp_fixup = otp_fixups_7429;
+		break;
+	default:
+		return;
+	}
+
+	val = __raw_readl(((void __iomem *)
+			  CKSEG1ADDR(SUN_TOP_CTRL +
+				     SUN_TOP_CTRL_OPTION_STATUS_0)));
+
+	for (i = OTP_OPTION_SATA; i < OTP_OPTION_MAX; i++) {
+		if (val & otp_fixup[i].mask)
+			otp_disable_peripheral(dtb, otp_fixup[i].aliases);
+	}
+}
+
 #ifdef CONFIG_DT_BCM974XX
 static void __init cfe_die(char *fmt, ...)
 {
@@ -681,6 +772,7 @@ void __init transfer_cfe_to_dt(void *dtb)
 		transfer_net_cfe_to_dt(initial_boot_params);
 		alloc_mtd_partitions(initial_boot_params);
 		sdhci_disables(initial_boot_params);
+		otp_disable(initial_boot_params);
 		cfe_getenv("BOOT_FLAGS", arcs_cmdline, COMMAND_LINE_SIZE);
 	}
 

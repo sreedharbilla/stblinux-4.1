@@ -1753,9 +1753,6 @@ static void bcm_sysport_netif_start(struct net_device *dev)
 		intrl2_1_mask_clear(priv, 0xffffffff);
 	else
 		intrl2_0_mask_clear(priv, INTRL2_0_TDMA_MBDONE_MASK);
-
-	/* Last call before we start the real business */
-	netif_tx_start_all_queues(dev);
 }
 
 static void rbuf_init(struct bcm_sysport_priv *priv)
@@ -1899,6 +1896,8 @@ static int bcm_sysport_open(struct net_device *dev)
 
 	bcm_sysport_netif_start(dev);
 
+	netif_tx_start_all_queues(dev);
+
 	return 0;
 
 out_clear_rx_int:
@@ -1924,7 +1923,7 @@ static void bcm_sysport_netif_stop(struct net_device *dev)
 	struct bcm_sysport_priv *priv = netdev_priv(dev);
 
 	/* stop all software from updating hardware */
-	netif_tx_stop_all_queues(dev);
+	netif_tx_disable(dev);
 	napi_disable(&priv->napi);
 	phy_stop(priv->phydev);
 
@@ -2349,11 +2348,11 @@ static int bcm_sysport_suspend(struct device *d)
 	if (!netif_running(dev))
 		return 0;
 
+	netif_device_detach(dev);
+
 	bcm_sysport_netif_stop(dev);
 
 	phy_suspend(priv->phydev);
-
-	netif_device_detach(dev);
 
 	/* Disable UniMAC RX */
 	umac_enable_set(priv, CMD_RX_EN, 0);
@@ -2442,8 +2441,6 @@ static int bcm_sysport_resume(struct device *d)
 		goto out_free_rx_ring;
 	}
 
-	netif_device_attach(dev);
-
 	/* RX pipe enable */
 	topctrl_writel(priv, 0, RX_FLUSH_CNTL);
 
@@ -2487,6 +2484,8 @@ static int bcm_sysport_resume(struct device *d)
 	phy_resume(priv->phydev);
 
 	bcm_sysport_netif_start(dev);
+
+	netif_device_attach(dev);
 
 	return 0;
 
